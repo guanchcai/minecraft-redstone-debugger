@@ -1,0 +1,16 @@
+{
+  "variants": {
+    "example_powered=false,redstone_powered=false": {
+      "model": "redstone-debugger:block/indicator_block_off"
+    },
+    "example_powered=false,redstone_powered=true": {
+      "model": "redstone-debugger:block/indicator_block_redstone"
+    },
+    "example_powered=true,redstone_powered=false": {
+      "model": "redstone-debugger:block/indicator_block_example"
+    },
+    "example_powered=true,redstone_powered=true": {
+      "model": "redstone-debugger:block/indicator_block_both"
+    }
+  }
+}

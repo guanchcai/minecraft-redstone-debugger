@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "redstone-debugger:block/indicator_block_off"
+  }
+}

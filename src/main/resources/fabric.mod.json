@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "redstone-debugger",
+	"version": "${version}",
+	"name": "redstone debugger",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/redstone-debugger/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"name.modid.RedstoneDebugger"
+		],
+		"client": [
+			"name.modid.client.RedstoneDebuggerClient"
+		]
+	},
+	"mixins": [
+		"redstone-debugger.mixins.json",
+		{
+			"config": "redstone-debugger.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

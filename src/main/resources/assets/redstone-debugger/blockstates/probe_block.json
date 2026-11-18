@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "redstone-debugger:block/probe_block"
+    }
+  }
+}
