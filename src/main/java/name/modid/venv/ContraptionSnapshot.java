@@ -33,7 +33,7 @@ public final class ContraptionSnapshot {
   private static final Logger LOGGER = LogUtils.getLogger();
 
   /** Flags for placing blocks without anything reacting */
-  private static final int SILENT_PLACE = Block.UPDATE_CLIENTS // show change to players
+  static final int SILENT_PLACE = Block.UPDATE_CLIENTS // show change to players
       | Block.UPDATE_KNOWN_SHAPE                   // don't reshape neighbours
       | Block.UPDATE_SUPPRESS_DROPS                // replaced blocks don't drop
       | Block.UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS // removed containers don't spill items

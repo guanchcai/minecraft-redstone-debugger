@@ -32,18 +32,23 @@ public final class RdbCommand {
           + "). Raise it with /gamerule redstone-debugger:max_capture_volume <blocks>."
       )
   );
+  private static final SimpleCommandExceptionType VENV_EMPTY = new SimpleCommandExceptionType(
+      Component.literal("The VENV is empty. Capture something with /rdb capture <from> <to>.")
+  );
 
   private RdbCommand() {
   }
 
   /** Builds the /rdb tree. Called by Fabric every time commands are (re)loaded. */
   public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-    dispatcher.register(Commands.literal("rdb")                         // /rdb
+    dispatcher.register(Commands.literal("rdb")
         .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))   // ops / cheats only
-        .then(Commands.literal("capture")                               // /rdb capture
+        .then(Commands.literal("capture")
             .then(Commands.argument("from", BlockPosArgument.blockPos())
                 .then(Commands.argument("to", BlockPosArgument.blockPos())
-                    .executes(RdbCommand::capture)))));
+                    .executes(RdbCommand::capture))))
+        .then(Commands.literal("clear")
+            .executes(RdbCommand::clear)));
   }
 
   private static int capture(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -71,5 +76,13 @@ public final class RdbCommand {
         snapshot.blockCount(), snapshot.pendingTickCount(),
         box.getXSpan(), box.getYSpan(), box.getZSpan())), true); // true: also tell other ops + log
     return snapshot.blockCount();                                // result for /execute store
+  }
+
+  private static int clear(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    if (!VenvManager.clear(context.getSource().getServer())) {
+      throw VENV_EMPTY.create();
+    }
+    context.getSource().sendSuccess(() -> Component.literal("Cleared the VENV."), true);
+    return 1;                                                         // 1 = success, by convention
   }
 }
