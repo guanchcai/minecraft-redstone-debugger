@@ -1,5 +1,6 @@
 {
   "block.redstone-debugger.example_block": "Example Block",
   "block.redstone-debugger.probe_block": "Probe Block",
-  "block.redstone-debugger.indicator_block": "Indicator Block"
+  "block.redstone-debugger.indicator_block": "Indicator Block",
+  "gamerule.redstone-debugger.max_capture_volume": "Max RDB capture volume (blocks)"
 }

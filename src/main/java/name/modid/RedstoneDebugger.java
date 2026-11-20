@@ -1,7 +1,10 @@
 package name.modid;
 
+import name.modid.command.RdbCommand;
+import name.modid.venv.VenvManager;
 import net.fabricmc.api.ModInitializer;
 
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.resources.Identifier;
 
 import org.slf4j.Logger;
@@ -21,6 +24,11 @@ public class RedstoneDebugger implements ModInitializer {
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
 		ModBlocks.initialize();
+		VenvManager.initialize();
+
+		CommandRegistrationCallback.EVENT.register(
+				(dispatcher, _, _) -> RdbCommand.register(dispatcher)
+		);
 		LOGGER.info("Hello Fabric world!");
 	}
 

@@ -1,0 +1,75 @@
+package name.modid.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType;
+import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import name.modid.venv.ContraptionSnapshot;
+import name.modid.venv.VenvManager;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+
+/**
+ * The /rdb command tree.
+ * <pre>
+ * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
+ * </pre>
+ */
+public final class RdbCommand {
+  // Error messages.
+  private static final SimpleCommandExceptionType CAPTURE_FROM_VENV = new SimpleCommandExceptionType(
+      Component.literal("You are already in the VENV. Capture from the world the contraption is in.")
+  );
+  private static final Dynamic2CommandExceptionType TOO_LARGE = new Dynamic2CommandExceptionType(
+      (volume, max) -> Component.literal(
+          "Region too large: " + volume + " blocks (max " + max
+          + "). Raise it with /gamerule redstone-debugger:max_capture_volume <blocks>."
+      )
+  );
+
+  private RdbCommand() {
+  }
+
+  /** Builds the /rdb tree. Called by Fabric every time commands are (re)loaded. */
+  public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+    dispatcher.register(Commands.literal("rdb")                         // /rdb
+        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))   // ops / cheats only
+        .then(Commands.literal("capture")                               // /rdb capture
+            .then(Commands.argument("from", BlockPosArgument.blockPos())
+                .then(Commands.argument("to", BlockPosArgument.blockPos())
+                    .executes(RdbCommand::capture)))));
+  }
+
+  private static int capture(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException(); // fails if run from the console
+    if (VenvManager.isVenv(player.level())) {
+      throw CAPTURE_FROM_VENV.create();
+    }
+
+    BlockPos from = BlockPosArgument.getLoadedBlockPos(context, "from"); // errors if not loaded
+    BlockPos to = BlockPosArgument.getLoadedBlockPos(context, "to");
+    BoundingBox box = BoundingBox.fromCorners(from, to);              // corners can be in any order
+
+    long volume = (long) box.getXSpan() * box.getYSpan() * box.getZSpan(); // avoid int overflow
+    int maxVolume = context.getSource().getServer().getGameRules()
+        .get(VenvManager.MAX_CAPTURE_VOLUME);
+    if (volume > maxVolume) {
+      throw TOO_LARGE.create(volume, maxVolume);
+    }
+
+    ContraptionSnapshot snapshot = VenvManager.capture(player.level(), box);
+    VenvManager.teleportToContraption(player, box);
+
+    context.getSource().sendSuccess(() -> Component.literal(String.format(
+        "Captured %d blocks and %d pending ticks (%dx%dx%d) into the VENV.",
+        snapshot.blockCount(), snapshot.pendingTickCount(),
+        box.getXSpan(), box.getYSpan(), box.getZSpan())), true); // true: also tell other ops + log
+    return snapshot.blockCount();                                // result for /execute store
+  }
+}
