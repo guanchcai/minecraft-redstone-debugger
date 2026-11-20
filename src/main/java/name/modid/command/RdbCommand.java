@@ -19,6 +19,10 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
  * The /rdb command tree.
  * <pre>
  * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
+ * /rdb goto                  go to the contraption in the VENV
+ * /rdb return                go back to where you were before entering
+ * /rdb reset                 restore the contraption to its captured state
+ * /rdb clear                 empty the VENV
  * </pre>
  */
 public final class RdbCommand {
@@ -35,6 +39,12 @@ public final class RdbCommand {
   private static final SimpleCommandExceptionType VENV_EMPTY = new SimpleCommandExceptionType(
       Component.literal("The VENV is empty. Capture something with /rdb capture <from> <to>.")
   );
+  private static final SimpleCommandExceptionType NOT_IN_VENV = new SimpleCommandExceptionType(
+      Component.literal("You are not in the VENV.")
+  );
+  private static final SimpleCommandExceptionType NOTHING_TO_RESET = new SimpleCommandExceptionType(
+      Component.literal("Nothing to reset: the VENV is empty, or the game restarted since the capture. Capture again.")
+  );
 
   private RdbCommand() {
   }
@@ -48,7 +58,13 @@ public final class RdbCommand {
                 .then(Commands.argument("to", BlockPosArgument.blockPos())
                     .executes(RdbCommand::capture))))
         .then(Commands.literal("clear")
-            .executes(RdbCommand::clear)));
+            .executes(RdbCommand::clear))
+        .then(Commands.literal("goto")                                  // /rdb goto
+            .executes(RdbCommand::goTo))
+        .then(Commands.literal("return")                                // /rdb return
+            .executes(RdbCommand::returnFromVenv))
+        .then(Commands.literal("reset")                                 // /rdb reset
+            .executes(RdbCommand::reset)));
   }
 
   private static int capture(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -69,7 +85,7 @@ public final class RdbCommand {
     }
 
     ContraptionSnapshot snapshot = VenvManager.capture(player.level(), box);
-    VenvManager.teleportToContraption(player, box);
+    VenvManager.enter(player);
 
     context.getSource().sendSuccess(() -> Component.literal(String.format(
         "Captured %d blocks and %d pending ticks (%dx%dx%d) into the VENV.",
@@ -84,5 +100,27 @@ public final class RdbCommand {
     }
     context.getSource().sendSuccess(() -> Component.literal("Cleared the VENV."), true);
     return 1;                                                         // 1 = success, by convention
+  }
+
+  private static int goTo(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    if (!VenvManager.enter(context.getSource().getPlayerOrException())) {
+      throw VENV_EMPTY.create();
+    }
+    return 1;                                                         // the teleport is the feedback
+  }
+
+  private static int returnFromVenv(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    if (!VenvManager.leave(context.getSource().getPlayerOrException())) {
+      throw NOT_IN_VENV.create();
+    }
+    return 1;
+  }
+
+  private static int reset(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    if (!VenvManager.reset(context.getSource().getServer())) {
+      throw NOTHING_TO_RESET.create();
+    }
+    context.getSource().sendSuccess(() -> Component.literal("Reset the VENV contraption to its captured state."), true);
+    return 1;
   }
 }

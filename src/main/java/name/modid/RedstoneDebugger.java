@@ -3,10 +3,9 @@ package name.modid;
 import name.modid.command.RdbCommand;
 import name.modid.venv.VenvManager;
 import net.fabricmc.api.ModInitializer;
-
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.resources.Identifier;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,6 +28,9 @@ public class RedstoneDebugger implements ModInitializer {
 		CommandRegistrationCallback.EVENT.register(
 				(dispatcher, _, _) -> RdbCommand.register(dispatcher)
 		);
+
+		ServerLifecycleEvents.SERVER_STOPPED.register(server -> VenvManager.onServerStopped());
+
 		LOGGER.info("Hello Fabric world!");
 	}
 
