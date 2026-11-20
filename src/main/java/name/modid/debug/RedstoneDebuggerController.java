@@ -20,6 +20,7 @@ public class RedstoneDebuggerController {
     private DebugState debugState = DebugState.OFF;
     private int tpt = 2; // ticks per redstone tick;
     private int slowTicks = 0;
+    private int stepTicksRemaining = 0;
     private boolean frozen = false;
     private DebugState previousState;
     private long ticksHeld;
@@ -60,6 +61,10 @@ public class RedstoneDebuggerController {
         } else {
             // It is not paused, TODO: Throw a warning?
         }
+    }
+
+    public void step(int n) {
+        stepTicksRemaining += n;
     }
 
     public boolean isPaused() {
@@ -127,6 +132,11 @@ public class RedstoneDebuggerController {
     }
 
     public void onServerTickStart() {
+        if (stepTicksRemaining > 0) {
+            frozen = false;
+            stepTicksRemaining -= 1;
+            return;
+        }
         if (isRunning()) {
             slowTicks += 1;
             frozen = slowTicks < tpt;

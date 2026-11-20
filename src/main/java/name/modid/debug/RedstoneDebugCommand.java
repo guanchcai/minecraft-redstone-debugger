@@ -2,6 +2,7 @@ package name.modid.debug;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import name.modid.RedstoneDebugger;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -45,6 +46,22 @@ public class RedstoneDebugCommand {
                                     context.getSource().sendSuccess(() -> Component.literal(controller.getState()), false);
                                     return 1;
                                 }))
+                        .then(Commands.literal("step")
+                                .executes(context -> {
+                                    context.getSource().sendSuccess(() -> Component.literal("[rdb]: stepping 2 ticks (1 redstone tick)"), false);
+                                    controller.step(2);
+                                    return 1;
+                                })
+                                .then(Commands.argument("ticks", IntegerArgumentType.integer(1, 1000))
+                                        .executes(context -> {
+                                            int n = IntegerArgumentType.getInteger(context, "ticks");
+                                            context.getSource().sendSuccess(() -> Component.literal(
+                                                    "[rdb]: stepping " +
+                                                             n * 2 +
+                                                            " ticks (" + n + " redstone ticks)"), false);
+                                            controller.step(n * 2);
+                                            return 1;
+                                        })))
         );
     }
 }
