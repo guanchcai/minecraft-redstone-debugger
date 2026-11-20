@@ -18,7 +18,9 @@ public class RedstoneDebuggerController {
     }
 
     private DebugState debugState = DebugState.OFF;
-    private int tprt = 2; // ticks per redstone tick;
+    private int tpt = 2; // ticks per redstone tick;
+    private int slowTicks = 0;
+    private boolean frozen = false;
     private DebugState previousState;
     private long ticksHeld;
 
@@ -26,8 +28,9 @@ public class RedstoneDebuggerController {
         return gameTime - ticksHeld;
     }
 
-    public void start() {
+    public void start(int speed) {
         previousState = DebugState.RUNNING;
+        tpt = speed;
         if (!isOff()) {
             return;
         }
@@ -63,6 +66,11 @@ public class RedstoneDebuggerController {
         return debugState == DebugState.PAUSED;
     }
 
+    /** True on game ticks where redstone must not run (paused, or a skipped tick in slow mode). Decided in onServerTickStart. */
+    public boolean isFrozen() {
+        return frozen;
+    }
+
     public boolean isOff() {
         return debugState == DebugState.OFF;
     }
@@ -75,7 +83,7 @@ public class RedstoneDebuggerController {
         return switch (debugState) {
             case OFF -> "off";
             case PAUSED -> "paused";
-            case RUNNING -> "running, current ticks per redstone tick: " + tprt;
+            case RUNNING -> "running, current ticks per redstone tick: " + tpt;
         };
     }
 
@@ -113,8 +121,20 @@ public class RedstoneDebuggerController {
     }
 
     public void onGameTimeAdvanced() {
-        if (isPaused()) {
+        if (frozen) {
             ticksHeld += 1;
+        }
+    }
+
+    public void onServerTickStart() {
+        if (isRunning()) {
+            slowTicks += 1;
+            frozen = slowTicks < tpt;
+            slowTicks %= tpt;
+        } else if (isPaused()) {
+            frozen = true;
+        } else {
+            frozen = false;
         }
     }
 }

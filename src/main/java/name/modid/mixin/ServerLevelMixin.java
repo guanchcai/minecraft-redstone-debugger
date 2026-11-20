@@ -20,15 +20,15 @@ import java.util.function.BooleanSupplier;
 abstract class ServerLevelMixin {
 	@Inject(at = @At("HEAD"), method = "runBlockEvents", cancellable = true)
 	private void rdbInit(CallbackInfo info) {
-		if (RedstoneDebugger.CONTROLLER.isPaused()) {
+		if (RedstoneDebugger.CONTROLLER.isFrozen()) {
 			info.cancel();
 		}
 	}
 
-	// Start of each level tick: if redstone may run, replay the neighbour updates held while paused
+	// Start of each level tick: if redstone runs this tick, replay the neighbour updates held while frozen
 	@Inject(at = @At("HEAD"), method = "tick(Ljava/util/function/BooleanSupplier;)V")
 	private void rdbReleaseHeldUpdates(BooleanSupplier hasTimeLeft, CallbackInfo info) {
-		if (!RedstoneDebugger.CONTROLLER.isPaused()) {
+		if (!RedstoneDebugger.CONTROLLER.isFrozen()) {
 			// Java thinks `this` is a ServerLevelMixin, but at runtime it's the real ServerLevel.
 			// Casting through Object first is the standard mixin trick to tell the compiler that.
 			RedstoneDebugger.CONTROLLER.releaseHeldUpdates((ServerLevel) (Object) this);
@@ -66,15 +66,30 @@ abstract class ServerLevelMixin {
 	// (That's why this one has no "rdb" prefix and is public: it must match exactly to override.)
 	// "resource": ServerLevel can be closed (that shuts the world down), so the IDE warns that `self`
 	// is never closed. False alarm: we must NOT close the world here.
+	//
+	// There are TWO versions of createTick, and vanilla builds the tick separately in each (the short one
+	// does NOT call the long one), so both need overriding:
+	//   createTick(pos, type, delay)           <- scheduleTick(pos, block, delay): buttons, torches, most blocks
+	//   createTick(pos, type, delay, priority) <- scheduleTick(pos, block, delay, priority): e.g. repeaters
+	@SuppressWarnings("resource")
+	public <T> ScheduledTick<T> createTick(BlockPos pos, T type, int delay) {
+		ServerLevel self = (ServerLevel) (Object) this;
+		// Same as vanilla, except for our "now". This constructor uses the default priority (NORMAL).
+		return new ScheduledTick<>(type, pos, rdbNow(type) + delay, self.nextSubTickCount());
+	}
+
 	@SuppressWarnings("resource")
 	public <T> ScheduledTick<T> createTick(BlockPos pos, T type, int delay, TickPriority priority) {
 		ServerLevel self = (ServerLevel) (Object) this;
-		// type is the Block (or Fluid) asking to be ticked. Only block ticks use redstone time;
-		// fluid ticks keep using game time, so water and lava still flow while paused.
-		long now = type instanceof Block
-				? RedstoneDebugger.CONTROLLER.toRedstoneTime(self.getGameTime())
-				: self.getGameTime();
-		// Same as what vanilla does, except for our "now"
-		return new ScheduledTick<>(type, pos, now + delay, priority, self.nextSubTickCount());
+		// Same as vanilla, except for our "now"
+		return new ScheduledTick<>(type, pos, rdbNow(type) + delay, priority, self.nextSubTickCount());
+	}
+
+	// "Now" for a new scheduled tick. type is the Block (or Fluid) asking to be ticked. Only block ticks use
+	// redstone time; fluid ticks keep using game time, so water and lava still flow while paused.
+	@SuppressWarnings("resource")
+	private long rdbNow(Object type) {
+		long gameTime = ((ServerLevel) (Object) this).getGameTime();
+		return type instanceof Block ? RedstoneDebugger.CONTROLLER.toRedstoneTime(gameTime) : gameTime;
 	}
 }

@@ -15,7 +15,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Every neighbour update ("a block next to you changed") passes through handleNeighborChanged
  * before reaching the block's own neighborChanged(). Redstone dust, lamps, doors, pistons and
- * our IndicatorBlock all react through it. While paused, save the update instead of running it.
+ * our IndicatorBlock all react through it. On frozen ticks (paused, or skipped in slow mode),
+ * save the update instead of running it.
  */
 @Mixin(BlockBehaviour.BlockStateBase.class)
 abstract class BlockStateBaseMixin {
@@ -23,7 +24,7 @@ abstract class BlockStateBaseMixin {
 	private void rdbHoldNeighborUpdate(Level level, BlockPos pos, Block sourceBlock, Orientation orientation,
 									   boolean movedByPiston, CallbackInfo info) {
 		// Only on the server: the client runs this method too, but the server decides what redstone does
-		if (level instanceof ServerLevel serverLevel && RedstoneDebugger.CONTROLLER.isPaused()) {
+		if (level instanceof ServerLevel serverLevel && RedstoneDebugger.CONTROLLER.isFrozen()) {
 			RedstoneDebugger.CONTROLLER.holdNeighborUpdate(serverLevel, pos, sourceBlock, orientation, movedByPiston);
 			info.cancel(); // don't run it now; releaseHeldUpdates replays it later
 		}
