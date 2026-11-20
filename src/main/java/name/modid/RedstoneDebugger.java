@@ -1,7 +1,10 @@
 package name.modid;
 
+import name.modid.debug.RedstoneDebuggerController;
+import name.modid.debug.RedstoneDebugCommand;
 import net.fabricmc.api.ModInitializer;
 
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.resources.Identifier;
 
 import org.slf4j.Logger;
@@ -14,6 +17,7 @@ public class RedstoneDebugger implements ModInitializer {
 	// It is considered best practice to use your mod id as the logger's name.
 	// That way, it's clear which mod wrote info, warnings, and errors.
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+	public static final RedstoneDebuggerController CONTROLLER = new RedstoneDebuggerController();
 
 	@Override
 	public void onInitialize() {
@@ -21,6 +25,11 @@ public class RedstoneDebugger implements ModInitializer {
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
 		ModBlocks.initialize();
+		CommandRegistrationCallback.EVENT.register(
+			(dispatcher, buildContext, selection) -> {
+				RedstoneDebugCommand.register(dispatcher, CONTROLLER);
+			}
+		);
 		LOGGER.info("Hello Fabric world!");
 	}
 
