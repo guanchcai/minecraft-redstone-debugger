@@ -3,5 +3,7 @@
   "block.redstone-debugger.probe_block": "Probe Block",
   "block.redstone-debugger.indicator_block": "Indicator Block",
   "gamerule.redstone-debugger.max_capture_volume": "Max RDB capture volume (blocks)",
-  "item.redstone-debugger.rdb_wand": "RDB Selection Wand"
+  "item.redstone-debugger.rdb_wand": "RDB Selection Wand",
+  "key.category.redstone-debugger.rdb": "Redstone Debugger",
+  "key.redstone-debugger.selection_modifier": "Wand: hold + scroll to move a face"
 }
