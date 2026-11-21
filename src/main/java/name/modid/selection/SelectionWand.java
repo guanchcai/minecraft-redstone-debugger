@@ -1,10 +1,13 @@
 package name.modid.selection;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import name.modid.ModItems;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -37,10 +40,15 @@ public final class SelectionWand {
       return InteractionResult.PASS;
     }
     if (player instanceof ServerPlayer serverPlayer) {          // only the server owns selections
-      Component message = player.isShiftKeyDown()
-          ? SelectionManager.include(serverPlayer, pos)         // sneak-click: grow to include this block
-          : SelectionManager.setCorner(serverPlayer, corner, pos);
-      serverPlayer.sendOverlayMessage(message);                 // action bar
+      try {
+        Component message = player.isShiftKeyDown()
+            ? SelectionManager.include(serverPlayer, pos)       // sneak-click: grow to include this block
+            : SelectionManager.setCorner(serverPlayer, corner, pos);
+        serverPlayer.sendOverlayMessage(message);               // action bar
+      } catch (CommandSyntaxException e) {                      // e.g. clicked in the VENV
+        serverPlayer.sendOverlayMessage(ComponentUtils.fromMessage(e.getRawMessage()).copy()
+            .withStyle(ChatFormatting.RED));
+      }
     }
     return InteractionResult.SUCCESS;                           // cancel breaking / using the block
   }
