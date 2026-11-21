@@ -9,6 +9,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import name.modid.ModItems;
+import name.modid.debug.RedstoneDebuggerController;
 import name.modid.selection.Selection;
 import name.modid.selection.SelectionManager;
 import name.modid.venv.ContraptionSnapshot;
@@ -28,9 +29,10 @@ import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The /rdb command tree.
+ * The /rdb command tree (ops / cheats only).
  * <pre>
- * /rdb wand                  get the selection wand (left-click: corner 1, right-click: corner 2)
+ * Selection
+ * /rdb wand                 get the selection wand (left-click: corner 1, right-click: corner 2)
  * /rdb pos1 [&lt;pos&gt;]          set corner 1 (default: where you stand)
  * /rdb pos2 [&lt;pos&gt;]          set corner 2
  * /rdb sel                   show the selection
@@ -39,12 +41,23 @@ import org.jspecify.annotations.Nullable;
  * /rdb shift [&lt;dir&gt;] [&lt;n&gt;]   move the whole box n blocks toward &lt;dir&gt;
  * /rdb fit                   shrink the box to the blocks inside it
  * /rdb desel                 clear the selection
+ *
+ * VENV
  * /rdb capture               copy the selection into the VENV and go there
  * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
  * /rdb goto                  go to the contraption in the VENV
  * /rdb return                go back to where you were before entering
  * /rdb reset                 restore the contraption to its captured state
  * /rdb clear                 empty the VENV
+ *
+ * Redstone debugger
+ * /rdb start [&lt;speed&gt;]       turn the debugger on, or change its speed: redstone runs 1 in every
+ *                            &lt;speed&gt; game ticks (default 2, 1 = normal speed)
+ * /rdb stop                  turn the debugger off
+ * /rdb pause                 freeze redstone; players, mobs and fluids keep running
+ * /rdb resume                unfreeze redstone
+ * /rdb step [&lt;n&gt;]            while paused, run n redstone ticks (2n game ticks, default 1)
+ * /rdb checkStatus           show the debugger state
  * </pre>
  */
 public final class RdbCommand {
@@ -75,7 +88,7 @@ public final class RdbCommand {
   }
 
   /** Builds the /rdb tree. Called by Fabric every time commands are (re)loaded. */
-  public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+  public static void register(CommandDispatcher<CommandSourceStack> dispatcher, RedstoneDebuggerController controller) {
     dispatcher.register(Commands.literal("rdb")
         .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)) // ops / cheats only
         // Selection
@@ -105,7 +118,26 @@ public final class RdbCommand {
         .then(Commands.literal("reset")
             .executes(RdbCommand::reset))
         .then(Commands.literal("clear")
-            .executes(RdbCommand::clear)));
+            .executes(RdbCommand::clear))
+        // Redstone debugger
+        .then(Commands.literal("start")
+            .executes(context -> start(context, controller, 2))         // /rdb start: default speed 2
+            .then(Commands.argument("speed", IntegerArgumentType.integer(1, 1000))
+                .executes(context -> start(context, controller,
+                    IntegerArgumentType.getInteger(context, "speed"))))) // /rdb start <speed>
+        .then(Commands.literal("stop")
+            .executes(context -> stop(context, controller)))
+        .then(Commands.literal("pause")
+            .executes(context -> pause(context, controller)))
+        .then(Commands.literal("resume")
+            .executes(context -> resume(context, controller)))
+        .then(Commands.literal("step")
+            .executes(context -> step(context, controller, 1))          // /rdb step: 1 redstone tick
+            .then(Commands.argument("ticks", IntegerArgumentType.integer(1, 1000))
+                .executes(context -> step(context, controller,
+                    IntegerArgumentType.getInteger(context, "ticks"))))) // /rdb step <n>
+        .then(Commands.literal("checkStatus")
+            .executes(context -> checkStatus(context, controller))));
   }
 
   /** Builds {@code /rdb <name> [<pos>]}, which sets corner {@code corner} of the selection. */
@@ -262,6 +294,55 @@ public final class RdbCommand {
     }
     context.getSource().sendSuccess(() -> Component.literal("Cleared the VENV."), true);
     return 1;                                                         // 1 = success, by convention
+  }
+
+  // ---- Redstone debugger ----
+
+  private static int start(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller,
+      int speed) {
+    controller.start(speed);
+    sendDebuggerState(context, controller);
+    return 1;
+  }
+
+  private static int stop(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller) {
+    controller.stop();
+    sendDebuggerState(context, controller);
+    return 1;
+  }
+
+  private static int pause(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller) {
+    controller.pause();
+    sendDebuggerState(context, controller);
+    return 1;
+  }
+
+  private static int resume(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller) {
+    controller.resume();
+    sendDebuggerState(context, controller);
+    return 1;
+  }
+
+  /** Steps {@code redstoneTicks} redstone ticks; the controller counts in game ticks (2 per redstone tick). */
+  private static int step(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller,
+      int redstoneTicks) {
+    int gameTicks = redstoneTicks * 2;
+    String redstone = redstoneTicks == 1 ? "1 redstone tick" : redstoneTicks + " redstone ticks";
+    context.getSource().sendSuccess(() -> Component.literal(
+        "[rdb]: stepping " + gameTicks + " ticks (" + redstone + ")"), false);
+    controller.step(gameTicks);
+    return 1;
+  }
+
+  private static int checkStatus(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller) {
+    context.getSource().sendSuccess(() -> Component.literal(controller.getState()), false);
+    return 1;
+  }
+
+  /** Tells this player, other ops and the log the debugger's state after a change. */
+  private static void sendDebuggerState(CommandContext<CommandSourceStack> context,
+      RedstoneDebuggerController controller) {
+    context.getSource().sendSuccess(() -> Component.literal("Redstone debugger: " + controller.getState()), true);
   }
 
   // ---- Checks ----

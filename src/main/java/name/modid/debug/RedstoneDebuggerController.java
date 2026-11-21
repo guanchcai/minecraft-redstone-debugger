@@ -25,7 +25,11 @@ public class RedstoneDebuggerController {
     private DebugState previousState;
     private long ticksHeld;
 
-    public void reset() {
+    /**
+     * Clears all debugger state when a server (world) starts. Called from RedstoneDebugger on SERVER_STARTING.
+     * Not related to {@code /rdb reset}, which restores the VENV contraption (see VenvManager.reset).
+     */
+    public void onServerStarting() {
         ticksHeld = 0;
         stepTicksRemaining = 0;
         frozen = false;

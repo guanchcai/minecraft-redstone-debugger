@@ -2,7 +2,6 @@ package name.modid;
 
 import name.modid.command.RdbCommand;
 import name.modid.debug.RedstoneDebuggerController;
-import name.modid.debug.RedstoneDebugCommand;
 import name.modid.selection.SelectionManager;
 import name.modid.selection.SelectionWand;
 import name.modid.venv.VenvManager;
@@ -36,16 +35,11 @@ public class RedstoneDebugger implements ModInitializer {
 
 		// Redstone pause / slow-down / step
 		ServerTickEvents.START_SERVER_TICK.register((server) -> CONTROLLER.onServerTickStart());
-		ServerLifecycleEvents.SERVER_STARTING.register((server) -> CONTROLLER.reset());
+		ServerLifecycleEvents.SERVER_STARTING.register((server) -> CONTROLLER.onServerStarting());
 		ServerLifecycleEvents.SERVER_STOPPED.register((server) -> CONTROLLER.onServerStopped());
 
-		// Both register under /rdb and Brigadier merges them into one command. The FIRST registration's
-		// .requires(...) wins for the shared /rdb node, so RdbCommand (op-only) must stay first.
 		CommandRegistrationCallback.EVENT.register(
-			(dispatcher, buildContext, selection) -> {
-				RdbCommand.register(dispatcher);
-				RedstoneDebugCommand.register(dispatcher, CONTROLLER);
-			}
+			(dispatcher, buildContext, selection) -> RdbCommand.register(dispatcher, CONTROLLER)
 		);
 
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> VenvManager.onServerStopped());
