@@ -5,6 +5,7 @@ import name.modid.debug.RedstoneDebugCommand;
 import net.fabricmc.api.ModInitializer;
 
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.resources.Identifier;
 
@@ -27,6 +28,8 @@ public class RedstoneDebugger implements ModInitializer {
 		// Proceed with mild caution.
 		ModBlocks.initialize();
 		ServerTickEvents.START_SERVER_TICK.register((server) -> CONTROLLER.onServerTickStart());
+		ServerLifecycleEvents.SERVER_STARTING.register((server) -> CONTROLLER.reset());
+		ServerLifecycleEvents.SERVER_STOPPED.register((server) -> CONTROLLER.server_stop());
 		CommandRegistrationCallback.EVENT.register(
 			(dispatcher, buildContext, selection) -> {
 				RedstoneDebugCommand.register(dispatcher, CONTROLLER);

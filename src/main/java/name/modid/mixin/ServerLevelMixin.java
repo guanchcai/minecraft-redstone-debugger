@@ -71,14 +71,12 @@ abstract class ServerLevelMixin {
 	// does NOT call the long one), so both need overriding:
 	//   createTick(pos, type, delay)           <- scheduleTick(pos, block, delay): buttons, torches, most blocks
 	//   createTick(pos, type, delay, priority) <- scheduleTick(pos, block, delay, priority): e.g. repeaters
-	@SuppressWarnings("resource")
 	public <T> ScheduledTick<T> createTick(BlockPos pos, T type, int delay) {
 		ServerLevel self = (ServerLevel) (Object) this;
 		// Same as vanilla, except for our "now". This constructor uses the default priority (NORMAL).
 		return new ScheduledTick<>(type, pos, rdbNow(type) + delay, self.nextSubTickCount());
 	}
 
-	@SuppressWarnings("resource")
 	public <T> ScheduledTick<T> createTick(BlockPos pos, T type, int delay, TickPriority priority) {
 		ServerLevel self = (ServerLevel) (Object) this;
 		// Same as vanilla, except for our "now"
@@ -87,7 +85,6 @@ abstract class ServerLevelMixin {
 
 	// "Now" for a new scheduled tick. type is the Block (or Fluid) asking to be ticked. Only block ticks use
 	// redstone time; fluid ticks keep using game time, so water and lava still flow while paused.
-	@SuppressWarnings("resource")
 	private long rdbNow(Object type) {
 		long gameTime = ((ServerLevel) (Object) this).getGameTime();
 		return type instanceof Block ? RedstoneDebugger.CONTROLLER.toRedstoneTime(gameTime) : gameTime;

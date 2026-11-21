@@ -25,6 +25,20 @@ public class RedstoneDebuggerController {
     private DebugState previousState;
     private long ticksHeld;
 
+    public void reset() {
+        ticksHeld = 0;
+        stepTicksRemaining = 0;
+        frozen = false;
+        debugState = DebugState.OFF;
+        previousState = DebugState.OFF;
+        heldUpdates.clear();
+        slowTicks = 0;
+    }
+
+    public void server_stop() {
+        debugState = DebugState.OFF;
+    }
+
     public long toRedstoneTime(long gameTime) {
         return gameTime - ticksHeld;
     }
