@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import name.modid.ModItems;
 import name.modid.selection.Selection;
 import name.modid.selection.SelectionManager;
 import name.modid.venv.ContraptionSnapshot;
@@ -18,12 +19,19 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Prediction;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.jspecify.annotations.Nullable;
 
 /**
  * The /rdb command tree.
  * <pre>
+ * /rdb wand                  get the selection wand (left-click: corner 1, right-click: corner 2)
+ * /rdb pos1 [&lt;pos&gt;]          set corner 1 (default: where you stand)
+ * /rdb pos2 [&lt;pos&gt;]          set corner 2
+ * /rdb sel                   show the selection
+ * /rdb capture               copy the selection into the VENV and go there
  * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
  * /rdb goto                  go to the contraption in the VENV
  * /rdb return                go back to where you were before entering
@@ -52,7 +60,7 @@ public final class RdbCommand {
       Component.literal("Nothing to reset: the VENV is empty, or the game restarted since the capture. Capture again.")
   );
   private static final SimpleCommandExceptionType NO_SELECTION = new SimpleCommandExceptionType(
-      Component.literal("Select both corners first with /rdb pos1 and /rdb pos2.")
+      Component.literal("Select both corners first: /rdb wand, or /rdb pos1 and /rdb pos2.")
   );
   private static final SimpleCommandExceptionType SELECTION_ELSEWHERE = new SimpleCommandExceptionType(
       Component.literal("Your selection is in another dimension. Go there, or select again here.")
@@ -66,6 +74,8 @@ public final class RdbCommand {
     dispatcher.register(Commands.literal("rdb")
         .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)) // ops / cheats only
         // Selection
+        .then(Commands.literal("wand")
+            .executes(RdbCommand::giveWand))                    // /rdb wand
         .then(cornerCommand("pos1", 1))                         // /rdb pos1 [<pos>]
         .then(cornerCommand("pos2", 2))                         // /rdb pos2 [<pos>]
         .then(Commands.literal("sel")
@@ -98,15 +108,19 @@ public final class RdbCommand {
 
   // ---- Selection ----
 
+  private static int giveWand(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException();
+    player.getInventory().placeItemBackInInventory(
+        new ItemStack(ModItems.RDB_WAND), Prediction.SERVER_ONLY); // full inventory: drops at their feet
+    context.getSource().sendSuccess(() -> Component.literal(
+        "Left-click a block to set corner 1, right-click to set corner 2."), false);
+    return 1;
+  }
+
   private static int setCorner(CommandContext<CommandSourceStack> context, int corner, BlockPos pos)
       throws CommandSyntaxException {
-    ServerPlayer player = context.getSource().getPlayerOrException();
-    Selection selection = corner == 1
-        ? SelectionManager.setPos1(player, pos)
-        : SelectionManager.setPos2(player, pos);
-    context.getSource().sendSuccess(() -> Component.literal(String.format(
-            "Corner %d set to %d, %d, %d. ", corner, pos.getX(), pos.getY(), pos.getZ()))
-        .append(selection.describe()), false);                       // false: only tell this player
+    Component message = SelectionManager.setCorner(context.getSource().getPlayerOrException(), corner, pos);
+    context.getSource().sendSuccess(() -> message, false);  // only tell this player
     return 1;
   }
 

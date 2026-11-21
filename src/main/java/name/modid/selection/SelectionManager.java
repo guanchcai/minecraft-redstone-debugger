@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
 
@@ -14,10 +15,10 @@ public final class SelectionManager {
   /** Selections by player UUID. */
   private static final Map<UUID, Selection> SELECTIONS = new HashMap<>();
 
-  private SelectionManager() {
+  private SelectionManager() { // static-only utility class
   }
 
-  /** Registers the selection packet. Must run during mod init on both client and server. */
+  /** Registers the selection packet. Must run during mod init, on both client and server. */
   public static void initialize() {
     PayloadTypeRegistry.clientboundPlay().register(SelectionPayload.TYPE, SelectionPayload.CODEC);
   }
@@ -27,19 +28,30 @@ public final class SelectionManager {
     return SELECTIONS.get(player.getUUID());
   }
 
-  /** Sets corner 1 in the player's current dimension. */
-  public static Selection setPos1(ServerPlayer player, BlockPos pos) {
-    return update(player, currentOrEmpty(player).withPos1(pos));
-  }
-
-  /** Sets corner 2 in the player's current dimension. */
-  public static Selection setPos2(ServerPlayer player, BlockPos pos) {
-    return update(player, currentOrEmpty(player).withPos2(pos));
+  /**
+   * Sets corner {@code corner} (1 or 2) in the player's current dimension.
+   *
+   * @return a one-line description of the result, for chat or the action bar
+   */
+  public static Component setCorner(ServerPlayer player, int corner, BlockPos pos) {
+    Selection selection = corner == 1 ? setPos1(player, pos) : setPos2(player, pos);
+    return Component.literal(String.format("Corner %d set to %d, %d, %d. ",
+        corner, pos.getX(), pos.getY(), pos.getZ())).append(selection.describe());
   }
 
   /** Forgets all selections, so they can't leak into the next world opened in singleplayer. */
   public static void onServerStopped() {
     SELECTIONS.clear();
+  }
+
+  /** Sets corner 1 in the player's current dimension. */
+  private static Selection setPos1(ServerPlayer player, BlockPos pos) {
+    return update(player, currentOrEmpty(player).withPos1(pos));
+  }
+
+  /** Sets corner 2 in the player's current dimension. */
+  private static Selection setPos2(ServerPlayer player, BlockPos pos) {
+    return update(player, currentOrEmpty(player).withPos2(pos));
   }
 
   /** The player's selection, or a fresh one if they have none, or it's in another dimension. */

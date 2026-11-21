@@ -2,6 +2,7 @@ package name.modid;
 
 import name.modid.command.RdbCommand;
 import name.modid.selection.SelectionManager;
+import name.modid.selection.SelectionWand;
 import name.modid.venv.VenvManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -26,6 +27,8 @@ public class RedstoneDebugger implements ModInitializer {
 		ModBlocks.initialize();
 		VenvManager.initialize();
 		SelectionManager.initialize();
+		ModItems.initialize();
+		SelectionWand.initialize();
 
 		CommandRegistrationCallback.EVENT.register(
 				(dispatcher, _, _) -> RdbCommand.register(dispatcher)
