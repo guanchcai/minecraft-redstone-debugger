@@ -12,6 +12,8 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import com.google.common.collect.Iterables;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.jspecify.annotations.Nullable;
 
 /** Server-side store of each player's selection. */
@@ -24,6 +26,9 @@ public final class SelectionManager {
   );
   private static final SimpleCommandExceptionType SELECT_IN_VENV = new SimpleCommandExceptionType(
       Component.literal("You can't select in the VENV. Select in the world the contraption is in.")
+  );
+  private static final SimpleCommandExceptionType NOTHING_TO_FIT = new SimpleCommandExceptionType(
+      Component.literal("Nothing to fit: the selection is all air.")
   );
 
   private SelectionManager() { // static-only utility class
@@ -72,11 +77,32 @@ public final class SelectionManager {
    */
   public static Component edit(ServerPlayer player, UnaryOperator<Selection> change)
       throws CommandSyntaxException {
-    Selection current = currentOrEmpty(player);
-    if (!current.isComplete()) {
-      throw NO_SELECTION.create();                              // nothing to expand/shrink/shift yet
-    }
-    return update(player, change.apply(current)).describe();
+    return update(player, change.apply(requireComplete(player))).describe();
+  }
+
+  /**
+   * Shrinks the player's selection to the smallest box that still holds all its non-air blocks.
+   * Reads every block in it, so the caller must first check it's loaded and not too large.
+   *
+   * @return a one-line description of the result
+   * @throws CommandSyntaxException if the player is in the VENV, has no complete selection here,
+   *     or the selection is all air
+   */
+  public static Component fit(ServerPlayer player) throws CommandSyntaxException {
+    Selection current = requireComplete(player);
+    BoundingBox box = current.box();
+    Iterable<BlockPos> blocks = Iterables.filter(               // lazy: filtered while iterating
+        BlockPos.betweenClosed(box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ()),
+        pos -> !player.level().getBlockState(pos).isAir());
+    BoundingBox content = BoundingBox.encapsulatingPositions(blocks)
+        .orElseThrow(NOTHING_TO_FIT::create);                   // no blocks: all air
+    return update(player, current.fittedTo(content)).describe();
+  }
+
+  /** Forgets the player's selection and stops drawing it. */
+  public static void deselect(ServerPlayer player) {
+    SELECTIONS.remove(player.getUUID());
+    ServerPlayNetworking.send(player, SelectionPayload.EMPTY);  // client stops drawing the box
   }
 
   /** Forgets all selections, so they can't leak into the next world opened in singleplayer. */
@@ -109,7 +135,16 @@ public final class SelectionManager {
     return current;
   }
 
-  /** Every change goes through here, so the client is always told. */
+  /** The player's selection here, which must have both corners set. */
+  private static Selection requireComplete(ServerPlayer player) throws CommandSyntaxException {
+    Selection current = currentOrEmpty(player);
+    if (!current.isComplete()) {
+      throw NO_SELECTION.create();   // nothing to edit yet
+    }
+    return current;
+  }
+
+  /** Every edit goes through here, so the client is always told. */
   private static Selection update(ServerPlayer player, Selection selection) {
     SELECTIONS.put(player.getUUID(), selection);
     ServerPlayNetworking.send(player, SelectionPayload.of(selection)); // client draws it (SelectionRenderer)

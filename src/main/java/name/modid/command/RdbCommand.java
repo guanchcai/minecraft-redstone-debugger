@@ -34,15 +34,17 @@ import org.jspecify.annotations.Nullable;
  * /rdb pos1 [&lt;pos&gt;]          set corner 1 (default: where you stand)
  * /rdb pos2 [&lt;pos&gt;]          set corner 2
  * /rdb sel                   show the selection
- * /rdb expand [&lt;dir&gt;] [&lt;n&gt;]    push the &lt;dir&gt; face out by n (default: where you look, 1)
- * /rdb shrink [&lt;dir&gt;] [&lt;n&gt;]    pull the &lt;dir&gt; face in by n
- * /rdb shift [&lt;dir&gt;] [&lt;n&gt;]     move the whole box n blocks toward &lt;dir&gt;
+ * /rdb expand [&lt;dir&gt;] [&lt;n&gt;]  push the &lt;dir&gt; face out by n (default: where you look, 1)
+ * /rdb shrink [&lt;dir&gt;] [&lt;n&gt;]  pull the &lt;dir&gt; face in by n
+ * /rdb shift [&lt;dir&gt;] [&lt;n&gt;]   move the whole box n blocks toward &lt;dir&gt;
  * /rdb capture               copy the selection into the VENV and go there
  * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
  * /rdb goto                  go to the contraption in the VENV
  * /rdb return                go back to where you were before entering
  * /rdb reset                 restore the contraption to its captured state
  * /rdb clear                 empty the VENV
+ * /rdb fit                   shrink the box to the blocks inside it
+ * /rdb desel                 clear the selection
  * </pre>
  */
 public final class RdbCommand {
@@ -99,7 +101,11 @@ public final class RdbCommand {
         .then(Commands.literal("reset")
             .executes(RdbCommand::reset))
         .then(Commands.literal("clear")
-            .executes(RdbCommand::clear)));
+            .executes(RdbCommand::clear))
+        .then(Commands.literal("fit")
+            .executes(RdbCommand::fit))
+        .then(Commands.literal("desel")
+            .executes(RdbCommand::deselect)));
   }
 
   /** Builds {@code /rdb <name> [<pos>]}, which sets corner {@code corner} of the selection. */
@@ -177,6 +183,20 @@ public final class RdbCommand {
     Component message = SelectionManager.edit(player, selection -> edit.apply(selection, direction, amount));
     context.getSource().sendSuccess(() -> Component.literal(String.format(
         "Ran /rdb %s %s %d. ", name, direction.getName(), amount)).append(message), false);
+    return 1;
+  }
+
+  private static int fit(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException();
+    requireCapturable(context, player.level(), requireSelectedBox(player)); // fit reads every block, like capture
+    Component message = SelectionManager.fit(player);
+    context.getSource().sendSuccess(() -> Component.literal("Fitted to the blocks inside. ").append(message), false);
+    return 1;
+  }
+
+  private static int deselect(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    SelectionManager.deselect(context.getSource().getPlayerOrException());
+    context.getSource().sendSuccess(() -> Component.literal("Selection cleared."), false);
     return 1;
   }
 
@@ -264,6 +284,18 @@ public final class RdbCommand {
       throw SELECTION_ELSEWHERE.create();
     }
     return box;
+  }
+
+  /** Throws unless {@code box} is within the max capture volume and fully loaded. */
+  private static void requireCapturable(CommandContext<CommandSourceStack> context, ServerLevel level,
+                                        BoundingBox box) throws CommandSyntaxException {
+    long volume = (long) box.getXSpan() * box.getYSpan() * box.getZSpan();
+    int maxVolume = context.getSource().getServer().getGameRules()
+        .get(VenvManager.MAX_CAPTURE_VOLUME);
+    if (volume > maxVolume) { // before requireLoaded since this bounds that loop
+      throw TOO_LARGE.create(volume, maxVolume);
+    }
+    requireLoaded(level, box);
   }
 
   /** Throws unless all of {@code box} is inside the world and in loaded chunks. */

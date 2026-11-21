@@ -80,6 +80,21 @@ public record Selection(
     return new Selection(dimension, pos1.relative(direction, amount), pos2.relative(direction, amount));
   }
 
+  /**
+   * Pulls each face in to {@code content}, which must lie inside the box.
+   * Requires a complete selection.
+   */
+  public Selection fittedTo(BoundingBox content) {
+    BlockPos min = new BlockPos(content.minX(), content.minY(), content.minZ());
+    BlockPos max = new BlockPos(content.maxX(), content.maxY(), content.maxZ());
+    Selection result = this;
+    for (Direction face : Direction.values()) {                // each of the 6 faces
+      BlockPos edge = face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? max : min;
+      result = result.moveFace(face, result.distancePast(face, edge)); // negative: pulls the face in
+    }
+    return result;
+  }
+
   /** One line for chat, e.g. "Selection: 5x3x7 (105 blocks)." */
   public Component describe() {
     BoundingBox box = box();
