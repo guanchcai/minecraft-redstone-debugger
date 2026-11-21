@@ -35,7 +35,7 @@ public class RedstoneDebuggerController {
         slowTicks = 0;
     }
 
-    public void server_stop() {
+    public void onServerStopped() {
         debugState = DebugState.OFF;
     }
 

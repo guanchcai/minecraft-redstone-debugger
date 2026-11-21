@@ -29,7 +29,7 @@ public class RedstoneDebugger implements ModInitializer {
 		ModBlocks.initialize();
 		ServerTickEvents.START_SERVER_TICK.register((server) -> CONTROLLER.onServerTickStart());
 		ServerLifecycleEvents.SERVER_STARTING.register((server) -> CONTROLLER.reset());
-		ServerLifecycleEvents.SERVER_STOPPED.register((server) -> CONTROLLER.server_stop());
+		ServerLifecycleEvents.SERVER_STOPPED.register((server) -> CONTROLLER.onServerStopped());
 		CommandRegistrationCallback.EVENT.register(
 			(dispatcher, buildContext, selection) -> {
 				RedstoneDebugCommand.register(dispatcher, CONTROLLER);

@@ -64,8 +64,6 @@ abstract class ServerLevelMixin {
 	// method to ServerLevel: a normal method in a mixin is copied into the target class, and since it
 	// has exactly the same name and parameters, it replaces (overrides) the interface's version.
 	// (That's why this one has no "rdb" prefix and is public: it must match exactly to override.)
-	// "resource": ServerLevel can be closed (that shuts the world down), so the IDE warns that `self`
-	// is never closed. False alarm: we must NOT close the world here.
 	//
 	// There are TWO versions of createTick, and vanilla builds the tick separately in each (the short one
 	// does NOT call the long one), so both need overriding:
