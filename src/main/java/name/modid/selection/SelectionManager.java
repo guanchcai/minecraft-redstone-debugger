@@ -3,6 +3,8 @@ package name.modid.selection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
@@ -12,7 +14,12 @@ public final class SelectionManager {
   /** Selections by player UUID. */
   private static final Map<UUID, Selection> SELECTIONS = new HashMap<>();
 
-  private SelectionManager() { // static-only utility class
+  private SelectionManager() {
+  }
+
+  /** Registers the selection packet. Must run during mod init on both client and server. */
+  public static void initialize() {
+    PayloadTypeRegistry.clientboundPlay().register(SelectionPayload.TYPE, SelectionPayload.CODEC);
   }
 
   /** The player's selection, or null if they haven't set any corner. */
@@ -44,9 +51,10 @@ public final class SelectionManager {
     return current;
   }
 
-  /** Every change goes through here. */
+  /** Every change goes through here, so the client is always told. */
   private static Selection update(ServerPlayer player, Selection selection) {
     SELECTIONS.put(player.getUUID(), selection);
+    ServerPlayNetworking.send(player, SelectionPayload.of(selection)); // client draws it (SelectionRenderer)
     return selection;
   }
 }

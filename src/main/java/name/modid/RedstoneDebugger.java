@@ -25,6 +25,7 @@ public class RedstoneDebugger implements ModInitializer {
 		// Proceed with mild caution.
 		ModBlocks.initialize();
 		VenvManager.initialize();
+		SelectionManager.initialize();
 
 		CommandRegistrationCallback.EVENT.register(
 				(dispatcher, _, _) -> RdbCommand.register(dispatcher)
