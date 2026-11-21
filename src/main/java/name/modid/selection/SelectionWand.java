@@ -4,13 +4,15 @@ import name.modid.ModItems;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 
 /**
- * Selecting with the RDB wand: left-click a block for corner 1, right-click for corner 2.
+ * Selecting with the RDB wand: left-click a block for corner 1, right-click for corner 2,
+ * sneak + either click to grow the box to include the block.
  *
  * <p>Uses Fabric's click events rather than Item methods, because the events run <em>before</em> the
  * clicked block reacts: with Item.useOn, right-clicking a repeater would cycle its delay.
@@ -35,7 +37,10 @@ public final class SelectionWand {
       return InteractionResult.PASS;
     }
     if (player instanceof ServerPlayer serverPlayer) {          // only the server owns selections
-      serverPlayer.sendOverlayMessage(SelectionManager.setCorner(serverPlayer, corner, pos)); // action bar
+      Component message = player.isShiftKeyDown()
+          ? SelectionManager.include(serverPlayer, pos)         // sneak-click: grow to include this block
+          : SelectionManager.setCorner(serverPlayer, corner, pos);
+      serverPlayer.sendOverlayMessage(message);                 // action bar
     }
     return InteractionResult.SUCCESS;                           // cancel breaking / using the block
   }

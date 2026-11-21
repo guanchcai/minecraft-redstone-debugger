@@ -39,6 +39,17 @@ public final class SelectionManager {
         corner, pos.getX(), pos.getY(), pos.getZ())).append(selection.describe());
   }
 
+  /**
+   * Grows the player's selection just enough to contain {@code pos}.
+   *
+   * @return a one-line description of the result, for chat or the action bar
+   */
+  public static Component include(ServerPlayer player, BlockPos pos) {
+    Selection selection = update(player, currentOrEmpty(player).including(pos));
+    return Component.literal(String.format("Included %d, %d, %d. ",
+        pos.getX(), pos.getY(), pos.getZ())).append(selection.describe());
+  }
+
   /** Forgets all selections, so they can't leak into the next world opened in singleplayer. */
   public static void onServerStopped() {
     SELECTIONS.clear();

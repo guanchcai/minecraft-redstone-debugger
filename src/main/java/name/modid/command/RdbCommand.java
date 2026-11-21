@@ -113,7 +113,8 @@ public final class RdbCommand {
     player.getInventory().placeItemBackInInventory(
         new ItemStack(ModItems.RDB_WAND), Prediction.SERVER_ONLY); // full inventory: drops at their feet
     context.getSource().sendSuccess(() -> Component.literal(
-        "Left-click a block to set corner 1, right-click to set corner 2."), false);
+        "Left-click: corner 1. Right-click: corner 2. " +
+            "Sneak-click: grow the box to include a block."), false);
     return 1;
   }
 
