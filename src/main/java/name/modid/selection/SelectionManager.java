@@ -5,6 +5,7 @@ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import name.modid.venv.VenvManager;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -18,6 +19,9 @@ public final class SelectionManager {
   /** Selections by player UUID. */
   private static final Map<UUID, Selection> SELECTIONS = new HashMap<>();
 
+  public static final SimpleCommandExceptionType NO_SELECTION = new SimpleCommandExceptionType(
+      Component.literal("Select both corners first: /rdb wand, or /rdb pos1 and /rdb pos2.")
+  );
   private static final SimpleCommandExceptionType SELECT_IN_VENV = new SimpleCommandExceptionType(
       Component.literal("You can't select in the VENV. Select in the world the contraption is in.")
   );
@@ -58,6 +62,21 @@ public final class SelectionManager {
     Selection selection = update(player, currentOrEmpty(player).including(pos));
     return Component.literal(String.format("Included %d, %d, %d. ",
         pos.getX(), pos.getY(), pos.getZ())).append(selection.describe());
+  }
+
+  /**
+   * Applies {@code change} to the player's selection, which must have both corners set.
+   *
+   * @return a one-line description of the result
+   * @throws CommandSyntaxException if the player is in the VENV, or hasn't selected both corners here
+   */
+  public static Component edit(ServerPlayer player, UnaryOperator<Selection> change)
+      throws CommandSyntaxException {
+    Selection current = currentOrEmpty(player);
+    if (!current.isComplete()) {
+      throw NO_SELECTION.create();                              // nothing to expand/shrink/shift yet
+    }
+    return update(player, change.apply(current)).describe();
   }
 
   /** Forgets all selections, so they can't leak into the next world opened in singleplayer. */

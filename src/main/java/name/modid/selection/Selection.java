@@ -60,6 +60,26 @@ public record Selection(
     return result;
   }
 
+  /** Pushes the {@code face} side out by {@code amount} blocks. Requires a complete selection. */
+  public Selection expand(Direction face, int amount) {
+    return moveFace(face, amount);
+  }
+
+  /**
+   * Pulls the {@code face} side in by {@code amount} blocks, stopping at 1 block thick.
+   * Requires a complete selection.
+   */
+  public Selection shrink(Direction face, int amount) {
+    BoundingBox box = box();
+    int span = face.getAxis().choose(box.getXSpan(), box.getYSpan(), box.getZSpan());
+    return moveFace(face, -Math.min(amount, span - 1));         // never past the opposite face
+  }
+
+  /** Moves the whole box {@code amount} blocks toward {@code direction}. Requires a complete selection. */
+  public Selection shift(Direction direction, int amount) {
+    return new Selection(dimension, pos1.relative(direction, amount), pos2.relative(direction, amount));
+  }
+
   /** One line for chat, e.g. "Selection: 5x3x7 (105 blocks)." */
   public Component describe() {
     BoundingBox box = box();

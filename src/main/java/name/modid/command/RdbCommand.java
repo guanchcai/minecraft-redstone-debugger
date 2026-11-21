@@ -1,7 +1,9 @@
 package name.modid.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType;
@@ -15,6 +17,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -31,6 +34,9 @@ import org.jspecify.annotations.Nullable;
  * /rdb pos1 [&lt;pos&gt;]          set corner 1 (default: where you stand)
  * /rdb pos2 [&lt;pos&gt;]          set corner 2
  * /rdb sel                   show the selection
+ * /rdb expand [&lt;dir&gt;] [&lt;n&gt;]    push the &lt;dir&gt; face out by n (default: where you look, 1)
+ * /rdb shrink [&lt;dir&gt;] [&lt;n&gt;]    pull the &lt;dir&gt; face in by n
+ * /rdb shift [&lt;dir&gt;] [&lt;n&gt;]     move the whole box n blocks toward &lt;dir&gt;
  * /rdb capture               copy the selection into the VENV and go there
  * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
  * /rdb goto                  go to the contraption in the VENV
@@ -59,9 +65,6 @@ public final class RdbCommand {
   private static final SimpleCommandExceptionType NOTHING_TO_RESET = new SimpleCommandExceptionType(
       Component.literal("Nothing to reset: the VENV is empty, or the game restarted since the capture. Capture again.")
   );
-  private static final SimpleCommandExceptionType NO_SELECTION = new SimpleCommandExceptionType(
-      Component.literal("Select both corners first: /rdb wand, or /rdb pos1 and /rdb pos2.")
-  );
   private static final SimpleCommandExceptionType SELECTION_ELSEWHERE = new SimpleCommandExceptionType(
       Component.literal("Your selection is in another dimension. Go there, or select again here.")
   );
@@ -80,6 +83,9 @@ public final class RdbCommand {
         .then(cornerCommand("pos2", 2))                         // /rdb pos2 [<pos>]
         .then(Commands.literal("sel")
             .executes(RdbCommand::showSelection))
+        .then(editCommand("expand", Selection::expand))         // /rdb expand [<direction>] [<amount>]
+        .then(editCommand("shrink", Selection::shrink))
+        .then(editCommand("shift", Selection::shift))
         // VENV
         .then(Commands.literal("capture")
             .executes(RdbCommand::captureSelection)             // /rdb capture: use the selection
@@ -106,6 +112,36 @@ public final class RdbCommand {
                 BlockPosArgument.getBlockPos(context, "pos"))));
   }
 
+  /** An edit like {@code Selection::expand}: changes a selection in a direction by an amount. */
+  @FunctionalInterface
+  private interface SelectionEdit {
+    Selection apply(Selection selection, Direction direction, int amount);
+  }
+
+  /**
+   * Builds {@code /rdb <name> [<direction>] [<amount>]}.
+   * Direction defaults to forward (where the player is looking) and amount to 1.
+   */
+  private static LiteralArgumentBuilder<CommandSourceStack> editCommand(String name, SelectionEdit edit) {
+    LiteralArgumentBuilder<CommandSourceStack> command = Commands.literal(name)
+        .executes(context -> applyEdit(context, name, edit, 1, DirectionWord.FORWARD)) // /rdb expand
+        .then(amountArgument(name, edit, DirectionWord.FORWARD)); // /rdb expand 3
+    for (DirectionWord word : DirectionWord.values()) {
+      command.then(Commands.literal(word.word())
+          .executes(context -> applyEdit(context, name, edit, 1, word)) // /rdb expand north
+          .then(amountArgument(name, edit, word)));             // /rdb expand north 3
+    }
+    return command;
+  }
+
+  /** The optional {@code <amount>} at the end of an edit command, applied toward {@code word}. */
+  private static RequiredArgumentBuilder<CommandSourceStack, Integer> amountArgument(
+      String name, SelectionEdit edit, DirectionWord word) {
+    return Commands.argument("amount", IntegerArgumentType.integer(1))
+        .executes(context -> applyEdit(context, name, edit,
+            IntegerArgumentType.getInteger(context, "amount"), word));
+  }
+
   // ---- Selection ----
 
   private static int giveWand(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -128,9 +164,19 @@ public final class RdbCommand {
   private static int showSelection(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
     @Nullable Selection selection = SelectionManager.get(context.getSource().getPlayerOrException());
     if (selection == null) {
-      throw NO_SELECTION.create();
+      throw SelectionManager.NO_SELECTION.create();
     }
     context.getSource().sendSuccess(selection::describe, false);
+    return 1;
+  }
+
+  private static int applyEdit(CommandContext<CommandSourceStack> context, String name, SelectionEdit edit,
+      int amount, DirectionWord word) throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException();
+    Direction direction = word.resolve(player);                 // e.g. "left" -> WEST
+    Component message = SelectionManager.edit(player, selection -> edit.apply(selection, direction, amount));
+    context.getSource().sendSuccess(() -> Component.literal(String.format(
+        "Ran /rdb %s %s %d. ", name, direction.getName(), amount)).append(message), false);
     return 1;
   }
 
@@ -212,7 +258,7 @@ public final class RdbCommand {
     @Nullable Selection selection = SelectionManager.get(player);
     @Nullable BoundingBox box = selection == null ? null : selection.box();
     if (selection == null || box == null) {
-      throw NO_SELECTION.create();
+      throw SelectionManager.NO_SELECTION.create();
     }
     if (selection.dimension() != player.level().dimension()) {
       throw SELECTION_ELSEWHERE.create();
