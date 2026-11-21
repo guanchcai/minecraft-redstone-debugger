@@ -1,6 +1,7 @@
 package name.modid;
 
 import name.modid.command.RdbCommand;
+import name.modid.selection.SelectionManager;
 import name.modid.venv.VenvManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -30,6 +31,7 @@ public class RedstoneDebugger implements ModInitializer {
 		);
 
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> VenvManager.onServerStopped());
+		ServerLifecycleEvents.SERVER_STOPPED.register(server -> SelectionManager.onServerStopped());
 
 		LOGGER.info("Hello Fabric world!");
 	}

@@ -1,19 +1,25 @@
 package name.modid.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import name.modid.selection.Selection;
+import name.modid.selection.SelectionManager;
 import name.modid.venv.ContraptionSnapshot;
 import name.modid.venv.VenvManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The /rdb command tree.
@@ -33,17 +39,23 @@ public final class RdbCommand {
   private static final Dynamic2CommandExceptionType TOO_LARGE = new Dynamic2CommandExceptionType(
       (volume, max) -> Component.literal(
           "Region too large: " + volume + " blocks (max " + max
-          + "). Raise it with /gamerule redstone-debugger:max_capture_volume <blocks>."
+              + "). Raise it with /gamerule redstone-debugger:max_capture_volume <blocks>."
       )
   );
   private static final SimpleCommandExceptionType VENV_EMPTY = new SimpleCommandExceptionType(
-      Component.literal("The VENV is empty. Capture something with /rdb capture <from> <to>.")
+      Component.literal("The VENV is empty. Capture something with /rdb capture.")
   );
   private static final SimpleCommandExceptionType NOT_IN_VENV = new SimpleCommandExceptionType(
       Component.literal("You are not in the VENV.")
   );
   private static final SimpleCommandExceptionType NOTHING_TO_RESET = new SimpleCommandExceptionType(
       Component.literal("Nothing to reset: the VENV is empty, or the game restarted since the capture. Capture again.")
+  );
+  private static final SimpleCommandExceptionType NO_SELECTION = new SimpleCommandExceptionType(
+      Component.literal("Select both corners first with /rdb pos1 and /rdb pos2.")
+  );
+  private static final SimpleCommandExceptionType SELECTION_ELSEWHERE = new SimpleCommandExceptionType(
+      Component.literal("Your selection is in another dimension. Go there, or select again here.")
   );
 
   private RdbCommand() {
@@ -52,37 +64,89 @@ public final class RdbCommand {
   /** Builds the /rdb tree. Called by Fabric every time commands are (re)loaded. */
   public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
     dispatcher.register(Commands.literal("rdb")
-        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))   // ops / cheats only
+        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)) // ops / cheats only
+        // Selection
+        .then(cornerCommand("pos1", 1))                         // /rdb pos1 [<pos>]
+        .then(cornerCommand("pos2", 2))                         // /rdb pos2 [<pos>]
+        .then(Commands.literal("sel")
+            .executes(RdbCommand::showSelection))
+        // VENV
         .then(Commands.literal("capture")
+            .executes(RdbCommand::captureSelection)             // /rdb capture: use the selection
             .then(Commands.argument("from", BlockPosArgument.blockPos())
                 .then(Commands.argument("to", BlockPosArgument.blockPos())
-                    .executes(RdbCommand::capture))))
-        .then(Commands.literal("clear")
-            .executes(RdbCommand::clear))
-        .then(Commands.literal("goto")                                  // /rdb goto
+                    .executes(RdbCommand::captureBox))))        // /rdb capture <from> <to>
+        .then(Commands.literal("goto")
             .executes(RdbCommand::goTo))
-        .then(Commands.literal("return")                                // /rdb return
+        .then(Commands.literal("return")
             .executes(RdbCommand::returnFromVenv))
-        .then(Commands.literal("reset")                                 // /rdb reset
-            .executes(RdbCommand::reset)));
+        .then(Commands.literal("reset")
+            .executes(RdbCommand::reset))
+        .then(Commands.literal("clear")
+            .executes(RdbCommand::clear)));
   }
 
-  private static int capture(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-    ServerPlayer player = context.getSource().getPlayerOrException(); // fails if run from the console
+  /** Builds {@code /rdb <name> [<pos>]}, which sets corner {@code corner} of the selection. */
+  private static LiteralArgumentBuilder<CommandSourceStack> cornerCommand(String name, int corner) {
+    return Commands.literal(name)
+        .executes(context -> setCorner(context, corner,
+            BlockPos.containing(context.getSource().getPosition())))
+        .then(Commands.argument("pos", BlockPosArgument.blockPos())
+            .executes(context -> setCorner(context, corner,
+                BlockPosArgument.getBlockPos(context, "pos"))));
+  }
+
+  // ---- Selection ----
+
+  private static int setCorner(CommandContext<CommandSourceStack> context, int corner, BlockPos pos)
+      throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException();
+    Selection selection = corner == 1
+        ? SelectionManager.setPos1(player, pos)
+        : SelectionManager.setPos2(player, pos);
+    context.getSource().sendSuccess(() -> Component.literal(String.format(
+            "Corner %d set to %d, %d, %d. ", corner, pos.getX(), pos.getY(), pos.getZ()))
+        .append(selection.describe()), false);                       // false: only tell this player
+    return 1;
+  }
+
+  private static int showSelection(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    @Nullable Selection selection = SelectionManager.get(context.getSource().getPlayerOrException());
+    if (selection == null) {
+      throw NO_SELECTION.create();
+    }
+    context.getSource().sendSuccess(selection::describe, false);
+    return 1;
+  }
+
+  // ---- VENV ----
+
+  private static int captureSelection(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException();
+    return capture(context, player, requireSelectedBox(player));
+  }
+
+  private static int captureBox(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    ServerPlayer player = context.getSource().getPlayerOrException();
+    BlockPos from = BlockPosArgument.getBlockPos(context, "from");
+    BlockPos to = BlockPosArgument.getBlockPos(context, "to");
+    return capture(context, player, BoundingBox.fromCorners(from, to));
+  }
+
+  /** Shared by both forms of /rdb capture: checks the box, copies it into the VENV, takes the player there. */
+  private static int capture(CommandContext<CommandSourceStack> context, ServerPlayer player, BoundingBox box)
+      throws CommandSyntaxException {
     if (VenvManager.isVenv(player.level())) {
       throw CAPTURE_FROM_VENV.create();
     }
 
-    BlockPos from = BlockPosArgument.getLoadedBlockPos(context, "from"); // errors if not loaded
-    BlockPos to = BlockPosArgument.getLoadedBlockPos(context, "to");
-    BoundingBox box = BoundingBox.fromCorners(from, to);              // corners can be in any order
-
-    long volume = (long) box.getXSpan() * box.getYSpan() * box.getZSpan(); // avoid int overflow
+    long volume = (long) box.getXSpan() * box.getYSpan() * box.getZSpan();
     int maxVolume = context.getSource().getServer().getGameRules()
         .get(VenvManager.MAX_CAPTURE_VOLUME);
-    if (volume > maxVolume) {
+    if (volume > maxVolume) { // before requireLoaded since this bounds that loop
       throw TOO_LARGE.create(volume, maxVolume);
     }
+    requireLoaded(player.level(), box);
 
     ContraptionSnapshot snapshot = VenvManager.capture(player.level(), box);
     VenvManager.enter(player);
@@ -91,22 +155,14 @@ public final class RdbCommand {
         "Captured %d blocks and %d pending ticks (%dx%dx%d) into the VENV.",
         snapshot.blockCount(), snapshot.pendingTickCount(),
         box.getXSpan(), box.getYSpan(), box.getZSpan())), true); // true: also tell other ops + log
-    return snapshot.blockCount();                                // result for /execute store
-  }
-
-  private static int clear(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
-    if (!VenvManager.clear(context.getSource().getServer())) {
-      throw VENV_EMPTY.create();
-    }
-    context.getSource().sendSuccess(() -> Component.literal("Cleared the VENV."), true);
-    return 1;                                                         // 1 = success, by convention
+    return snapshot.blockCount(); // result for /execute store
   }
 
   private static int goTo(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
     if (!VenvManager.enter(context.getSource().getPlayerOrException())) {
       throw VENV_EMPTY.create();
     }
-    return 1;                                                         // the teleport is the feedback
+    return 1;
   }
 
   private static int returnFromVenv(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -120,7 +176,50 @@ public final class RdbCommand {
     if (!VenvManager.reset(context.getSource().getServer())) {
       throw NOTHING_TO_RESET.create();
     }
-    context.getSource().sendSuccess(() -> Component.literal("Reset the VENV contraption to its captured state."), true);
+    context.getSource().sendSuccess(() -> Component.literal(
+        "Reset the VENV contraption to its captured state."
+    ), true);
     return 1;
+  }
+
+  private static int clear(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+    if (!VenvManager.clear(context.getSource().getServer())) {
+      throw VENV_EMPTY.create();
+    }
+    context.getSource().sendSuccess(() -> Component.literal("Cleared the VENV."), true);
+    return 1;                                                         // 1 = success, by convention
+  }
+
+  // ---- Checks ----
+
+  /** The player's selected box. Throws unless both corners are set, in the player's current dimension. */
+  private static BoundingBox requireSelectedBox(ServerPlayer player) throws CommandSyntaxException {
+    @Nullable Selection selection = SelectionManager.get(player);
+    @Nullable BoundingBox box = selection == null ? null : selection.box();
+    if (selection == null || box == null) {
+      throw NO_SELECTION.create();
+    }
+    if (selection.dimension() != player.level().dimension()) {
+      throw SELECTION_ELSEWHERE.create();
+    }
+    return box;
+  }
+
+  /** Throws unless all of {@code box} is inside the world and in loaded chunks. */
+  private static void requireLoaded(ServerLevel level, BoundingBox box) throws CommandSyntaxException {
+    if (!level.isInWorldBounds(new BlockPos(box.minX(), box.minY(), box.minZ()))
+        || !level.isInWorldBounds(new BlockPos(box.maxX(), box.maxY(), box.maxZ()))) {
+      throw BlockPosArgument.ERROR_OUT_OF_WORLD.create();             // a box is inside if both corners are
+    }
+    // One check per chunk column (16x16 blocks), not per block.
+    for (int chunkX = SectionPos.blockToSectionCoord(box.minX()); chunkX <= SectionPos.blockToSectionCoord(box.maxX()); chunkX++) {
+      for (int chunkZ = SectionPos.blockToSectionCoord(box.minZ()); chunkZ <= SectionPos.blockToSectionCoord(box.maxZ()); chunkZ++) {
+        BlockPos corner = new BlockPos(
+            SectionPos.sectionToBlockCoord(chunkX), box.minY(), SectionPos.sectionToBlockCoord(chunkZ));
+        if (!level.isLoaded(corner)) {
+          throw BlockPosArgument.ERROR_NOT_LOADED.create();           // vanilla's "That position is not loaded"
+        }
+      }
+    }
   }
 }
