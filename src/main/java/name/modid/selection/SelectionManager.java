@@ -1,5 +1,6 @@
 package name.modid.selection;
 
+import com.google.common.collect.Iterables;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import java.util.HashMap;
@@ -12,7 +13,6 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
-import com.google.common.collect.Iterables;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import org.jspecify.annotations.Nullable;
 
@@ -144,7 +144,7 @@ public final class SelectionManager {
     return current;
   }
 
-  /** Every edit goes through here, so the client is always told. */
+  /** Every edit goes through here, so the client is always told. (deselect tells it directly.) */
   private static Selection update(ServerPlayer player, Selection selection) {
     SELECTIONS.put(player.getUUID(), selection);
     ServerPlayNetworking.send(player, SelectionPayload.of(selection)); // client draws it (SelectionRenderer)

@@ -37,14 +37,14 @@ import org.jspecify.annotations.Nullable;
  * /rdb expand [&lt;dir&gt;] [&lt;n&gt;]  push the &lt;dir&gt; face out by n (default: where you look, 1)
  * /rdb shrink [&lt;dir&gt;] [&lt;n&gt;]  pull the &lt;dir&gt; face in by n
  * /rdb shift [&lt;dir&gt;] [&lt;n&gt;]   move the whole box n blocks toward &lt;dir&gt;
+ * /rdb fit                   shrink the box to the blocks inside it
+ * /rdb desel                 clear the selection
  * /rdb capture               copy the selection into the VENV and go there
  * /rdb capture &lt;from&gt; &lt;to&gt;   copy the box into the VENV and go there
  * /rdb goto                  go to the contraption in the VENV
  * /rdb return                go back to where you were before entering
  * /rdb reset                 restore the contraption to its captured state
  * /rdb clear                 empty the VENV
- * /rdb fit                   shrink the box to the blocks inside it
- * /rdb desel                 clear the selection
  * </pre>
  */
 public final class RdbCommand {
@@ -88,6 +88,10 @@ public final class RdbCommand {
         .then(editCommand("expand", Selection::expand))         // /rdb expand [<direction>] [<amount>]
         .then(editCommand("shrink", Selection::shrink))
         .then(editCommand("shift", Selection::shift))
+        .then(Commands.literal("fit")
+            .executes(RdbCommand::fit))
+        .then(Commands.literal("desel")
+            .executes(RdbCommand::deselect))
         // VENV
         .then(Commands.literal("capture")
             .executes(RdbCommand::captureSelection)             // /rdb capture: use the selection
@@ -101,11 +105,7 @@ public final class RdbCommand {
         .then(Commands.literal("reset")
             .executes(RdbCommand::reset))
         .then(Commands.literal("clear")
-            .executes(RdbCommand::clear))
-        .then(Commands.literal("fit")
-            .executes(RdbCommand::fit))
-        .then(Commands.literal("desel")
-            .executes(RdbCommand::deselect)));
+            .executes(RdbCommand::clear)));
   }
 
   /** Builds {@code /rdb <name> [<pos>]}, which sets corner {@code corner} of the selection. */
@@ -220,14 +220,7 @@ public final class RdbCommand {
     if (VenvManager.isVenv(player.level())) {
       throw CAPTURE_FROM_VENV.create();
     }
-
-    long volume = (long) box.getXSpan() * box.getYSpan() * box.getZSpan();
-    int maxVolume = context.getSource().getServer().getGameRules()
-        .get(VenvManager.MAX_CAPTURE_VOLUME);
-    if (volume > maxVolume) { // before requireLoaded since this bounds that loop
-      throw TOO_LARGE.create(volume, maxVolume);
-    }
-    requireLoaded(player.level(), box);
+    requireCapturable(context, player.level(), box);
 
     ContraptionSnapshot snapshot = VenvManager.capture(player.level(), box);
     VenvManager.enter(player);

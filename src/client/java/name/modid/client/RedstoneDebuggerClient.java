@@ -6,5 +6,6 @@ public class RedstoneDebuggerClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		SelectionRenderer.initialize();
+		WandInput.initialize();
 	}
 }
