@@ -120,13 +120,6 @@ public final class RdbCommand {
         .then(Commands.literal("clear")
             .executes(RdbCommand::clear))
         // Redstone debugger
-        .then(Commands.literal("start")
-            .executes(context -> start(context, controller, 2))         // /rdb start: default speed 2
-            .then(Commands.argument("speed", IntegerArgumentType.integer(1, 1000))
-                .executes(context -> start(context, controller,
-                    IntegerArgumentType.getInteger(context, "speed"))))) // /rdb start <speed>
-        .then(Commands.literal("stop")
-            .executes(context -> stop(context, controller)))
         .then(Commands.literal("pause")
             .executes(context -> pause(context, controller)))
         .then(Commands.literal("resume")
@@ -297,20 +290,6 @@ public final class RdbCommand {
   }
 
   // ---- Redstone debugger ----
-
-  private static int start(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller,
-      int speed) {
-    controller.start(speed);
-    sendDebuggerState(context, controller);
-    return 1;
-  }
-
-  private static int stop(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller) {
-    controller.stop();
-    sendDebuggerState(context, controller);
-    return 1;
-  }
-
   private static int pause(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller) {
     controller.pause();
     sendDebuggerState(context, controller);

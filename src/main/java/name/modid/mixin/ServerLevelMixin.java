@@ -1,6 +1,7 @@
 package name.modid.mixin;
 
 import name.modid.RedstoneDebugger;
+import name.modid.venv.VenvManager;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.BlockPos;
@@ -29,8 +30,11 @@ abstract class ServerLevelMixin {
 	@Inject(at = @At("HEAD"), method = "tick(Ljava/util/function/BooleanSupplier;)V")
 	private void rdbReleaseHeldUpdates(BooleanSupplier haveTime, CallbackInfo info) {
 		if (!RedstoneDebugger.CONTROLLER.isFrozenIn((ServerLevel) (Object)this)) {
-			// Java thinks `this` is a ServerLevelMixin, but at runtime it's the real ServerLevel.
-			// Casting through Object first is the standard mixin trick to tell the compiler that.
+			// Take a snapshot at every unfrozen tick before releasing held updates
+			if (VenvManager.isVenv((ServerLevel) (Object)this)) {
+				RedstoneDebugger.CONTROLLER.takeSnapshot(VenvManager.venv((ServerLevel) (Object)this));
+			}
+
 			RedstoneDebugger.CONTROLLER.releaseHeldUpdates((ServerLevel) (Object) this);
 		}
 	}

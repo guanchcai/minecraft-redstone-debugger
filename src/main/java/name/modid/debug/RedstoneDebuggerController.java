@@ -1,16 +1,18 @@
 package name.modid.debug;
 
+import name.modid.venv.ContraptionSnapshot;
 import name.modid.venv.VenvManager;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Position;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.redstone.Orientation;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class RedstoneDebuggerController {
     enum DebugState {
@@ -20,12 +22,12 @@ public class RedstoneDebuggerController {
     }
 
     private DebugState debugState = DebugState.OFF;
-    private int tpt = 2; // ticks per redstone tick;
+    private int tpt = 1; // ticks per redstone tick;
     private int slowTicks = 0;
     private int stepTicksRemaining = 0;
     private boolean frozen = false;
-    private DebugState previousState;
     private long ticksHeld;
+    private @Nullable BoundingBox extents = null;
 
     public long toRedstoneTime(Level level, long gameTime) {
         return VenvManager.isVenv(level) ? gameTime - ticksHeld : gameTime;
@@ -33,21 +35,10 @@ public class RedstoneDebuggerController {
 
     // ----- Core functions -----
     /** Starts debugging with tick slowdown rate speed */
-    public void start(int speed) {
-        previousState = DebugState.RUNNING;
-        tpt = speed;
-        if (!isOff()) {
-            return;
-        }
+    public void startDebug() {
+        tpt = 1;
         debugState = DebugState.RUNNING;
-    }
-
-    public void stop() {
-        previousState = DebugState.OFF;
-        if (!isRunning()) {
-            return;
-        }
-        debugState = DebugState.OFF;
+        clearSnapshots();
     }
 
     public void pause() {
@@ -55,13 +46,12 @@ public class RedstoneDebuggerController {
             // already paused
             return;
         }
-        previousState = debugState;
         debugState = DebugState.PAUSED;
     }
 
     public void resume() {
         if (isPaused()) {
-            debugState = previousState;
+            debugState = DebugState.RUNNING;
         } else {
             // It is not paused, TODO: Throw a warning?
         }
@@ -81,10 +71,6 @@ public class RedstoneDebuggerController {
         return frozen && VenvManager.isVenv(level);
     }
 
-    public boolean isOff() {
-        return debugState == DebugState.OFF;
-    }
-
     public boolean isRunning() {
         return debugState == DebugState.RUNNING;
     }
@@ -93,7 +79,7 @@ public class RedstoneDebuggerController {
         return switch (debugState) {
             case OFF -> "off";
             case PAUSED -> "paused";
-            case RUNNING -> "running, current ticks per redstone tick: " + tpt;
+            case RUNNING -> "running, current ticks per tick: " + tpt;
         };
     }
 
@@ -127,6 +113,36 @@ public class RedstoneDebuggerController {
                         update.orientation(), update.movedByPiston());
             }
         }
+    }
+    // ----- Snapshot for stepping back -----
+
+    record TickSnapshot(BlockPos origin, ContraptionSnapshot worldSnapshot, Set<HeldUpdate> heldUpdates, List<BlockEventData> blockEventDataList) {}
+
+    private final Deque<TickSnapshot> snapshots = new ArrayDeque<>();
+    public void takeSnapshot(ServerLevel venv) {
+        snapshots.addLast(
+                new TickSnapshot(extents.getCenter(), ContraptionSnapshot.capture(venv, extents),
+                        new LinkedHashSet<>(heldUpdates.getOrDefault(venv, Set.of())),
+                        List.of())
+        );
+    }
+
+    /** The area to snapshot. */
+    public @Nullable BoundingBox getExtents(ServerLevel venv) {
+        if (extents == null) {
+            BoundingBox box = VenvManager.currentBox(venv.getServer());
+            if (box == null) {
+                return null;
+            }
+            // our own copy, because encapsulate() changes the box it's called on
+            extents = new BoundingBox(box.minX(), box.minY(), box.minZ(), box.maxX(), box.maxY(), box.maxZ());
+        }
+        return extents;
+    }
+
+    public void clearSnapshots() {
+        snapshots.clear();
+        extents = null;
     }
 
     // ----- Functions hooked to minecraft functions -----
@@ -163,9 +179,9 @@ public class RedstoneDebuggerController {
         stepTicksRemaining = 0;
         frozen = false;
         debugState = DebugState.OFF;
-        previousState = DebugState.OFF;
         heldUpdates.clear();
         slowTicks = 0;
+        extents = null;
     }
 
     public void onServerStopped() {

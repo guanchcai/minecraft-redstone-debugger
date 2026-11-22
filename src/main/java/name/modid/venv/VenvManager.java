@@ -132,6 +132,7 @@ public final class VenvManager {
     }
     wipe(venv);
     snapshot = null; // nothing left to reset to
+    RedstoneDebugger.CONTROLLER.clearSnapshots(); // Reset snapshot history
     return true;
   }
 
@@ -186,6 +187,7 @@ public final class VenvManager {
     contraption.place(venv, new BlockPos(box.minX(), box.minY(), box.minZ())); // og coords
     buildViewingPlatform(venv, box);
     venv.setAttached(OCCUPIED_BOX, box);    // saved: lets the next capture/clear find it
+    RedstoneDebugger.CONTROLLER.startDebug(); // initialise debug controller
     snapshot = contraption;                 // in memory: lets /rdb reset find it
   }
 
