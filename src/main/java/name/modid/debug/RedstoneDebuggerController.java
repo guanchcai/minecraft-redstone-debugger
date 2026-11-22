@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.redstone.Orientation;
 import org.jetbrains.annotations.Nullable;
@@ -28,6 +29,7 @@ public class RedstoneDebuggerController {
     private boolean frozen = false;
     private long ticksHeld;
     private @Nullable BoundingBox extents = null;
+    private boolean restoring = false;
 
     public long toRedstoneTime(Level level, long gameTime) {
         return VenvManager.isVenv(level) ? gameTime - ticksHeld : gameTime;
@@ -41,24 +43,37 @@ public class RedstoneDebuggerController {
         clearSnapshots();
     }
 
-    public void pause() {
+    public ErrorCode pause() {
+        if (restoring) {
+            return ErrorCode.BUSY;
+        }
         if (isPaused()) {
             // already paused
-            return;
+            return ErrorCode.REPEATED_OP;
         }
         debugState = DebugState.PAUSED;
+        return ErrorCode.SUCCESS;
     }
 
-    public void resume() {
-        if (isPaused()) {
-            debugState = DebugState.RUNNING;
-        } else {
-            // It is not paused, TODO: Throw a warning?
+    public ErrorCode resume() {
+        if (restoring) {
+            return ErrorCode.BUSY;
         }
+        if (!isPaused()) {
+            return ErrorCode.REPEATED_OP;
+        }
+        debugState = DebugState.RUNNING;
+        return ErrorCode.SUCCESS;
     }
 
     public void step(int n) {
         stepTicksRemaining += n;
+    }
+
+    /** Slow mode: redstone runs on 1 game tick out of every {@code ticksPerTick} (1 = normal speed). */
+    public void setSpeed(int ticksPerTick) {
+        tpt = ticksPerTick;
+        slowTicks = 0; // restart the count so the new speed takes effect cleanly
     }
 
     // ----- Private field queries -----
@@ -81,6 +96,48 @@ public class RedstoneDebuggerController {
             case PAUSED -> "paused";
             case RUNNING -> "running, current ticks per tick: " + tpt;
         };
+    }
+
+    // TEMP debug for step-back recording: delete once /rdb back works
+    public String getRecordingDebug() {
+        TickRecord last = records.peekLast();
+        if (last == null) {
+            return "no tick records yet";
+        }
+        int totalChanges = records.stream().mapToInt(r -> r.changes().size()).sum();
+        StringBuilder text = new StringBuilder()
+                .append(records.size()).append(" tick records, ").append(totalChanges)
+                .append(" block changes in total, extents ").append(extents);
+
+        // Most recent tick that changed something (the very last tick is usually empty)
+        int ticksAgo = 0;
+        Iterator<TickRecord> newestFirst = records.descendingIterator();
+        TickRecord shown = null;
+        while (newestFirst.hasNext()) {
+            TickRecord record = newestFirst.next();
+            if (!record.changes().isEmpty()) {
+                shown = record;
+                break;
+            }
+            ticksAgo++;
+        }
+        if (shown == null) {
+            return text.append("\nno tick has changed any block yet").toString();
+        }
+        text.append("\nlast change ").append(ticksAgo).append(" ticks ago: ")
+                .append(shown.changes().size()).append(" block changes, ")
+                .append(shown.held().size()).append(" held updates");
+        // the first few changes, e.g. "1 64 2: redstone_wire[power=0] -> redstone_wire[power=15]"
+        for (BlockChange change : shown.changes().stream().limit(5).toList()) {
+            text.append("\n  ").append(change.pos().toShortString()).append(": ")
+                    .append(shortState(change.oldState())).append(" -> ").append(shortState(change.newState()));
+        }
+        return text.toString();
+    }
+
+    // TEMP: "minecraft:redstone_wire[...power=15...]" -> "redstone_wire[...power=15...]"
+    private static String shortState(BlockState state) {
+        return state.toString().replace("Block{minecraft:", "").replace("}", "");
     }
 
     // ----- Held neighbour updates -----
@@ -116,15 +173,31 @@ public class RedstoneDebuggerController {
     }
     // ----- Snapshot for stepping back -----
 
-    record TickSnapshot(BlockPos origin, ContraptionSnapshot worldSnapshot, Set<HeldUpdate> heldUpdates, List<BlockEventData> blockEventDataList) {}
+    record BlockChange(BlockPos pos, BlockState oldState, BlockState newState) {}
+    record TickRecord(List<BlockChange> changes, Set<HeldUpdate> held /* + ticks, events later */) {}
+    private final Deque<TickRecord> records = new ArrayDeque<>();
+    private static final int MAX_RECORDS = 20000;
 
-    private final Deque<TickSnapshot> snapshots = new ArrayDeque<>();
-    public void takeSnapshot(ServerLevel venv) {
-        snapshots.addLast(
-                new TickSnapshot(extents.getCenter(), ContraptionSnapshot.capture(venv, extents),
-                        new LinkedHashSet<>(heldUpdates.getOrDefault(venv, Set.of())),
-                        List.of())
-        );
+    public void recordBlockChange(ServerLevel venv, BlockPos pos, BlockState oldState, BlockState newState) {
+        if (restoring) {
+            // The change is due to us restoring
+            return;
+        }
+        if (records.isEmpty()) {
+            // This skips changes made by initialising
+            return;
+        }
+        records.peekLast().changes().add(new BlockChange(pos, oldState, newState));
+        BoundingBox box = getExtents(venv);
+        if (box != null && !box.isInside(pos)) {
+            extents = BoundingBox.encapsulating(box, new BoundingBox(pos));
+        }
+    }
+
+    public void startTickRecord(ServerLevel venv) {
+        records.addLast(new TickRecord(new ArrayList<>(),   // must be mutable: changes get added to it
+                new LinkedHashSet<>(heldUpdates.getOrDefault(venv, Set.of()))));
+        while (records.size() > MAX_RECORDS) records.removeFirst();
     }
 
     /** The area to snapshot. */
@@ -141,8 +214,9 @@ public class RedstoneDebuggerController {
     }
 
     public void clearSnapshots() {
-        snapshots.clear();
+        records.clear();
         extents = null;
+        restoring = false;
     }
 
     // ----- Functions hooked to minecraft functions -----
@@ -182,9 +256,11 @@ public class RedstoneDebuggerController {
         heldUpdates.clear();
         slowTicks = 0;
         extents = null;
+        restoring = false;
     }
 
     public void onServerStopped() {
         debugState = DebugState.OFF;
+        restoring = false;
     }
 }

@@ -5,7 +5,8 @@
 	"mixins": [
 		"BlockStateBaseMixin",
 		"ServerLevelMixin",
-		"PistonMovingBlockEntityMixin"
+		"PistonMovingBlockEntityMixin",
+		"LevelChunkMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

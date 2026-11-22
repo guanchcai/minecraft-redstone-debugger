@@ -32,7 +32,7 @@ abstract class ServerLevelMixin {
 		if (!RedstoneDebugger.CONTROLLER.isFrozenIn((ServerLevel) (Object)this)) {
 			// Take a snapshot at every unfrozen tick before releasing held updates
 			if (VenvManager.isVenv((ServerLevel) (Object)this)) {
-				RedstoneDebugger.CONTROLLER.takeSnapshot(VenvManager.venv((ServerLevel) (Object)this));
+				RedstoneDebugger.CONTROLLER.startTickRecord((ServerLevel) (Object)this);
 			}
 
 			RedstoneDebugger.CONTROLLER.releaseHeldUpdates((ServerLevel) (Object) this);
