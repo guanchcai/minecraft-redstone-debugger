@@ -15,7 +15,7 @@ abstract class PistonMovingBlockEntityMixin {
     @Inject(at = @At("HEAD"), method = "tick", cancellable = true)
     private static void rdbHoldMovingPistons(Level level, BlockPos pos, BlockState state, PistonMovingBlockEntity entity, CallbackInfo info) {
         if (!level.isClientSide()) {
-            if (RedstoneDebugger.CONTROLLER.isFrozen()) {
+            if (RedstoneDebugger.CONTROLLER.isFrozenIn(level)) {
                 info.cancel();
             }
         }

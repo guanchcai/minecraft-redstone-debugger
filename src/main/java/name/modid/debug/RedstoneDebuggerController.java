@@ -1,7 +1,9 @@
 package name.modid.debug;
 
+import name.modid.venv.VenvManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.redstone.Orientation;
 
@@ -25,28 +27,12 @@ public class RedstoneDebuggerController {
     private DebugState previousState;
     private long ticksHeld;
 
-    /**
-     * Clears all debugger state when a server (world) starts. Called from RedstoneDebugger on SERVER_STARTING.
-     * Not related to {@code /rdb reset}, which restores the VENV contraption (see VenvManager.reset).
-     */
-    public void onServerStarting() {
-        ticksHeld = 0;
-        stepTicksRemaining = 0;
-        frozen = false;
-        debugState = DebugState.OFF;
-        previousState = DebugState.OFF;
-        heldUpdates.clear();
-        slowTicks = 0;
+    public long toRedstoneTime(Level level, long gameTime) {
+        return VenvManager.isVenv(level) ? gameTime - ticksHeld : gameTime;
     }
 
-    public void onServerStopped() {
-        debugState = DebugState.OFF;
-    }
-
-    public long toRedstoneTime(long gameTime) {
-        return gameTime - ticksHeld;
-    }
-
+    // ----- Core functions -----
+    /** Starts debugging with tick slowdown rate speed */
     public void start(int speed) {
         previousState = DebugState.RUNNING;
         tpt = speed;
@@ -85,13 +71,14 @@ public class RedstoneDebuggerController {
         stepTicksRemaining += n;
     }
 
+    // ----- Private field queries -----
     public boolean isPaused() {
         return debugState == DebugState.PAUSED;
     }
 
     /** True on game ticks where redstone must not run (paused, or a skipped tick in slow mode). Decided in onServerTickStart. */
-    public boolean isFrozen() {
-        return frozen;
+    public boolean isFrozenIn(Level level) {
+        return frozen && VenvManager.isVenv(level);
     }
 
     public boolean isOff() {
@@ -113,8 +100,7 @@ public class RedstoneDebuggerController {
     // ----- Held neighbour updates -----
 
     /** Everything needed to replay one neighbour update later. */
-    private record HeldUpdate(BlockPos pos, Block sourceBlock, Orientation orientation, boolean movedByPiston) {
-    }
+    private record HeldUpdate(BlockPos pos, Block sourceBlock, Orientation orientation, boolean movedByPiston) {}
 
     // Held updates per dimension (overworld, nether, end).
     // A LinkedHashSet ignores duplicates (spamming one block adds nothing new) and keeps first-added order.
@@ -143,6 +129,8 @@ public class RedstoneDebuggerController {
         }
     }
 
+    // ----- Functions hooked to minecraft functions -----
+
     public void onGameTimeAdvanced() {
         if (frozen) {
             ticksHeld += 1;
@@ -164,5 +152,23 @@ public class RedstoneDebuggerController {
         } else {
             frozen = false;
         }
+    }
+
+    /**
+     * Clears all debugger state when a server (world) starts. Called from RedstoneDebugger on SERVER_STARTING.
+     * Not related to {@code /rdb reset}, which restores the VENV contraption (see VenvManager.reset).
+     */
+    public void onServerStarting() {
+        ticksHeld = 0;
+        stepTicksRemaining = 0;
+        frozen = false;
+        debugState = DebugState.OFF;
+        previousState = DebugState.OFF;
+        heldUpdates.clear();
+        slowTicks = 0;
+    }
+
+    public void onServerStopped() {
+        debugState = DebugState.OFF;
     }
 }

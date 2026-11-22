@@ -1,6 +1,7 @@
 package name.modid.venv;
 
 import com.mojang.logging.LogUtils;
+import name.modid.RedstoneDebugger;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.component.DataComponentMap;
@@ -194,7 +195,7 @@ public final class ContraptionSnapshot {
       BlockPos origin,
       List<TickEntry<T>> entries
   ) {
-    long now = level.getGameTime();
+    long now = RedstoneDebugger.CONTROLLER.toRedstoneTime(level, level.getGameTime());
     for (TickEntry<T> entry : entries) {
       target.schedule(new ScheduledTick<>(
           entry.type(),

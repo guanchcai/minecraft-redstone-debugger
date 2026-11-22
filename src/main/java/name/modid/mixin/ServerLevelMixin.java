@@ -20,15 +20,15 @@ import java.util.function.BooleanSupplier;
 abstract class ServerLevelMixin {
 	@Inject(at = @At("HEAD"), method = "runBlockEvents", cancellable = true)
 	private void rdbInit(CallbackInfo info) {
-		if (RedstoneDebugger.CONTROLLER.isFrozen()) {
+		if (RedstoneDebugger.CONTROLLER.isFrozenIn((ServerLevel) (Object)this)) {
 			info.cancel();
 		}
 	}
 
 	// Start of each level tick: if redstone runs this tick, replay the neighbour updates held while frozen
 	@Inject(at = @At("HEAD"), method = "tick(Ljava/util/function/BooleanSupplier;)V")
-	private void rdbReleaseHeldUpdates(BooleanSupplier hasTimeLeft, CallbackInfo info) {
-		if (!RedstoneDebugger.CONTROLLER.isFrozen()) {
+	private void rdbReleaseHeldUpdates(BooleanSupplier haveTime, CallbackInfo info) {
+		if (!RedstoneDebugger.CONTROLLER.isFrozenIn((ServerLevel) (Object)this)) {
 			// Java thinks `this` is a ServerLevelMixin, but at runtime it's the real ServerLevel.
 			// Casting through Object first is the standard mixin trick to tell the compiler that.
 			RedstoneDebugger.CONTROLLER.releaseHeldUpdates((ServerLevel) (Object) this);
@@ -54,7 +54,7 @@ abstract class ServerLevelMixin {
 			at = @At(value = "INVOKE", target = "Lnet/minecraft/world/ticks/LevelTicks;tick(JILjava/util/function/BiConsumer;)V", ordinal = 0),
 			index = 0)
 	private long rdbBlockTicksUseRedstoneTime(long gameTime) {
-		return RedstoneDebugger.CONTROLLER.toRedstoneTime(gameTime);
+		return RedstoneDebugger.CONTROLLER.toRedstoneTime((ServerLevel) (Object)this, gameTime);
 	}
 
 	// Hook 3: SCHEDULE new ticks on redstone time.
@@ -85,6 +85,6 @@ abstract class ServerLevelMixin {
 	// redstone time; fluid ticks keep using game time, so water and lava still flow while paused.
 	private long rdbNow(Object type) {
 		long gameTime = ((ServerLevel) (Object) this).getGameTime();
-		return type instanceof Block ? RedstoneDebugger.CONTROLLER.toRedstoneTime(gameTime) : gameTime;
+		return type instanceof Block ? RedstoneDebugger.CONTROLLER.toRedstoneTime((ServerLevel) (Object)this, gameTime) : gameTime;
 	}
 }

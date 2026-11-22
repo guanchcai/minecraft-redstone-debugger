@@ -24,7 +24,7 @@ abstract class BlockStateBaseMixin {
 	private void rdbHoldNeighborUpdate(Level level, BlockPos pos, Block sourceBlock, Orientation orientation,
 									   boolean movedByPiston, CallbackInfo info) {
 		// Only on the server: the client runs this method too, but the server decides what redstone does
-		if (level instanceof ServerLevel serverLevel && RedstoneDebugger.CONTROLLER.isFrozen()) {
+		if (level instanceof ServerLevel serverLevel && RedstoneDebugger.CONTROLLER.isFrozenIn(level)) {
 			RedstoneDebugger.CONTROLLER.holdNeighborUpdate(serverLevel, pos, sourceBlock, orientation, movedByPiston);
 			info.cancel(); // don't run it now; releaseHeldUpdates replays it later
 		}
