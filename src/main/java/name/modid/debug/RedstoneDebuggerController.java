@@ -2,15 +2,25 @@ package name.modid.debug;
 
 import name.modid.venv.ContraptionSnapshot;
 import name.modid.venv.VenvManager;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Position;
+import net.minecraft.core.SectionPos;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.BlockEventData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.redstone.Orientation;
+import net.minecraft.world.ticks.LevelChunkTicks;
+import net.minecraft.world.ticks.ScheduledTick;
+import net.minecraft.world.ticks.TickContainerAccess;
+import net.minecraft.world.ticks.TickPriority;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -30,6 +40,7 @@ public class RedstoneDebuggerController {
     private long ticksHeld;
     private @Nullable BoundingBox extents = null;
     private boolean restoring = false;
+    private long debugTicks = 0;
 
     public long toRedstoneTime(Level level, long gameTime) {
         return VenvManager.isVenv(level) ? gameTime - ticksHeld : gameTime;
@@ -41,6 +52,7 @@ public class RedstoneDebuggerController {
         tpt = 1;
         debugState = DebugState.RUNNING;
         clearSnapshots();
+        debugTicks = 0;
     }
 
     public ErrorCode pause() {
@@ -172,32 +184,112 @@ public class RedstoneDebuggerController {
         }
     }
     // ----- Snapshot for stepping back -----
-
     record BlockChange(BlockPos pos, BlockState oldState, BlockState newState) {}
-    record TickRecord(List<BlockChange> changes, Set<HeldUpdate> held /* + ticks, events later */) {}
+    record PendingTick(BlockPos pos, Block type, long trigger, TickPriority priority) {} // trigger in debugTicks
+    record TickRecord(long tick, List<BlockChange> changes, List<PendingTick> ticks, Set<HeldUpdate> held) {}
+
     private final Deque<TickRecord> records = new ArrayDeque<>();
     private static final int MAX_RECORDS = 20000;
+    private boolean ticksChanged = true;
+
+    // Records every pending ticks within our contraption box, assuming it is correct.
+    // pending ticks are events/updates scheduled in the future
+    private List<PendingTick> capturePendingTicks(ServerLevel venv) {
+        // Bounding box of captured redstone contraption
+        BoundingBox box = getExtents(venv);
+
+        assert box != null;
+        int minCX = SectionPos.blockToSectionCoord(box.minX());
+        int maxCX = SectionPos.blockToSectionCoord(box.maxX());
+        int minCZ = SectionPos.blockToSectionCoord(box.minZ());
+        int maxCZ = SectionPos.blockToSectionCoord(box.maxZ());
+
+        List<ScheduledTick<Block>> found = new ArrayList<>();
+        // Loops through all chunks of the bounding box
+        for (int cx = minCX; cx <= maxCX; cx++) {
+            for (int cz = minCZ; cz <= maxCZ; cz++) {
+                LevelChunk chunk = venv.getChunk(cx, cz);
+                TickContainerAccess<@NotNull Block> pendingTicks = chunk.getBlockTicks();
+                if (pendingTicks instanceof LevelChunkTicks<@NotNull Block>) {
+                    ((LevelChunkTicks<Block>) pendingTicks).getAll()
+                            .filter(tick -> box.isInside(tick.pos()))
+                            .forEach(found::add);
+                }
+            }
+        }
+
+        found.sort(ScheduledTick.DRAIN_ORDER);
+        long redstoneNow = toRedstoneTime(venv, venv.getGameTime());
+        return found.stream().map(
+                c -> new PendingTick(
+                        c.pos(), c.type(), c.triggerTick() - redstoneNow + debugTicks, c.priority()
+                )
+        ).toList();
+    }
+
+    /**
+     * This tick's record, created if needed. Used for block changes, i.e. part-way through a tick.
+     * By then this tick's scheduled ticks may already have run, so it must NOT capture the pending list:
+     * it reuses the previous record's list. That is correct because if the list had changed,
+     * startTickRecord would already have created this tick's record with a fresh copy.
+     * It also leaves ticksChanged alone, so changes made during this tick get copied next tick.
+     */
+    private TickRecord currentRecord(ServerLevel venv) {
+        if (!records.isEmpty() && records.peekLast().tick() == debugTicks) {
+            return records.peekLast();
+        }
+        List<PendingTick> pendingTicks = records.isEmpty() ? capturePendingTicks(venv) : records.peekLast().ticks();
+        return addRecord(pendingTicks, Set.of()); // held updates are only non-empty at the start of a tick
+    }
+
+    /** Start of each unfrozen VENV tick, before held updates are released and before any scheduled tick runs. */
+    public void startTickRecord(ServerLevel venv) {
+        if (getExtents(venv) == null) return;
+        debugTicks++;
+        Set<HeldUpdate> held = heldUpdates.getOrDefault(venv, Set.of());
+        if (ticksChanged || records.isEmpty()) {
+            // The pending list changed since the last copy: copy it now, while it still matches the start of this tick
+            addRecord(capturePendingTicks(venv), held);
+            ticksChanged = false;
+        } else if (!held.isEmpty()) {
+            // Only held updates to save: the pending list is unchanged, so share the previous record's
+            addRecord(records.peekLast().ticks(), held);
+        }
+    }
+
+    /** Adds a record for the current tick, dropping the oldest when over the cap. */
+    private TickRecord addRecord(List<PendingTick> pendingTicks, Set<HeldUpdate> held) {
+        TickRecord tickRecord = new TickRecord(debugTicks, new ArrayList<>(), pendingTicks, held);
+        records.addLast(tickRecord);
+        while (records.size() > MAX_RECORDS) {
+            records.removeFirst();
+        }
+        return tickRecord;
+    }
 
     public void recordBlockChange(ServerLevel venv, BlockPos pos, BlockState oldState, BlockState newState) {
-        if (restoring) {
-            // The change is due to us restoring
-            return;
-        }
-        if (records.isEmpty()) {
-            // This skips changes made by initialising
-            return;
-        }
-        records.peekLast().changes().add(new BlockChange(pos, oldState, newState));
+        if (restoring) return;
         BoundingBox box = getExtents(venv);
-        if (box != null && !box.isInside(pos)) {
+        if (box == null) return;
+        currentRecord(venv).changes().add(new BlockChange(pos, oldState, newState));
+        if (!box.isInside(pos)) {
             extents = BoundingBox.encapsulating(box, new BoundingBox(pos));
         }
     }
 
-    public void startTickRecord(ServerLevel venv) {
-        records.addLast(new TickRecord(new ArrayList<>(),   // must be mutable: changes get added to it
-                new LinkedHashSet<>(heldUpdates.getOrDefault(venv, Set.of()))));
-        while (records.size() > MAX_RECORDS) records.removeFirst();
+    public void markTicksChanged(Level level) {
+        if (VenvManager.isVenv(level)) ticksChanged = true;
+    }
+
+    /** Sends the extents to everyone in the VENV every 10 ticks, so ExtentsRenderer can draw it. Debug aid. */
+    public void sendExtents(MinecraftServer server) {
+        if (server.getTickCount() % 10 != 0) {
+            return;
+        }
+        ExtentsPayload payload = new ExtentsPayload(Optional.ofNullable(extents));
+        for (ServerPlayer player : VenvManager.venv(server).players()) {
+            ServerPlayNetworking.send(player, payload);
+        }
     }
 
     /** The area to snapshot. */
@@ -217,6 +309,44 @@ public class RedstoneDebuggerController {
         records.clear();
         extents = null;
         restoring = false;
+        debugTicks = 0;
+        ticksChanged = true;
+    }
+
+    public ErrorCode stepBack(ServerLevel venv, long n) {
+        if (!isPaused()) return ErrorCode.NOT_PAUSED;
+        long target = debugTicks - n + 1; // Offset by 1 tick, current tick
+        if (records.isEmpty() || records.peekFirst().tick() > target) return ErrorCode.NO_HISTORY;
+        restoring = true;
+        try {
+            TickRecord oldestRecord = null;
+            while (!records.isEmpty() && records.peekLast().tick() >= target) {
+                oldestRecord = records.pollLast();
+                List<BlockChange> cs = oldestRecord.changes();
+                for (int i = cs.size() - 1; i >= 0; i--) {
+                    BlockChange c = cs.get(i);
+                    venv.setBlock(c.pos(), c.oldState(), Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS);
+                }
+            }
+
+            TickRecord base = (oldestRecord != null && oldestRecord.tick() == target) ? oldestRecord : records.peekLast();
+            venv.getBlockTicks().clearArea(getExtents(venv));
+            long now = toRedstoneTime(venv, venv.getGameTime());
+            base.ticks.forEach(p -> venv.getBlockTicks().schedule(new ScheduledTick<>(p.type(), p.pos(),
+                    now + 1 + (p.trigger() - target), p.priority(), venv.nextSubTickCount()))
+            );
+            if (base.tick == target && !base.held.isEmpty()) {
+                heldUpdates.put(venv, new LinkedHashSet<>(base.held()));
+            } else {
+                heldUpdates.remove(venv);
+            }
+            debugTicks = target - 1;
+            ticksChanged = true;
+            return ErrorCode.SUCCESS;
+        } finally {
+            restoring = false;
+        }
+        return ErrorCode.UNKNOWN;
     }
 
     // ----- Functions hooked to minecraft functions -----

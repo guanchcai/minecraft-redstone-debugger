@@ -4,5 +4,7 @@ public enum ErrorCode {
     SUCCESS,
     UNKNOWN,
     BUSY,
-    REPEATED_OP
+    REPEATED_OP,
+    NOT_PAUSED,
+    NO_HISTORY
 }

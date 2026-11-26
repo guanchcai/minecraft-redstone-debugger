@@ -210,6 +210,11 @@ public final class VenvManager {
       return;                                                   // nothing recorded, nothing to wipe
     }
     BoundingBox area = usedArea(box);
+    // Also cover the step-back extents, which grow when e.g. a flying machine leaves the box
+    BoundingBox extents = RedstoneDebugger.CONTROLLER.getExtents(venv);
+    if (extents != null) {
+      area = BoundingBox.encapsulating(area, extents);
+    }
 
     BlockState air = Blocks.AIR.defaultBlockState();
     for (BlockPos pos : BlockPos.betweenClosed(

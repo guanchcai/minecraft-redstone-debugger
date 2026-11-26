@@ -1,6 +1,7 @@
 package name.modid;
 
 import name.modid.command.RdbCommand;
+import name.modid.debug.ExtentsPayload;
 import name.modid.debug.RedstoneDebuggerController;
 import name.modid.selection.SelectionManager;
 import name.modid.selection.SelectionWand;
@@ -9,6 +10,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +39,10 @@ public class RedstoneDebugger implements ModInitializer {
 		ServerTickEvents.START_SERVER_TICK.register((server) -> CONTROLLER.onServerTickStart());
 		ServerLifecycleEvents.SERVER_STARTING.register((server) -> CONTROLLER.onServerStarting());
 		ServerLifecycleEvents.SERVER_STOPPED.register((server) -> CONTROLLER.onServerStopped());
+
+		// Show the step-back recorder's extents to players in the VENV (drawn by ExtentsRenderer)
+		PayloadTypeRegistry.clientboundPlay().register(ExtentsPayload.TYPE, ExtentsPayload.CODEC);
+		ServerTickEvents.END_SERVER_TICK.register(CONTROLLER::sendExtents);
 
 		CommandRegistrationCallback.EVENT.register(
 			(dispatcher, buildContext, selection) -> RdbCommand.register(dispatcher, CONTROLLER)

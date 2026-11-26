@@ -27,8 +27,11 @@ abstract class ServerLevelMixin {
 	}
 
 	// Start of each level tick: if redstone runs this tick, replay the neighbour updates held while frozen
-	@Inject(at = @At("HEAD"), method = "tick(Ljava/util/function/BooleanSupplier;)V")
-	private void rdbReleaseHeldUpdates(BooleanSupplier haveTime, CallbackInfo info) {
+	@Inject(at = @At("HEAD"), method = "tickTime()V")
+	private void rdbReleaseHeldUpdates(CallbackInfo ci) {
+		if (VenvManager.isVenv((ServerLevel) (Object)this)) {
+			RedstoneDebugger.CONTROLLER.onGameTimeAdvanced();
+		}
 		if (!RedstoneDebugger.CONTROLLER.isFrozenIn((ServerLevel) (Object)this)) {
 			// Take a snapshot at every unfrozen tick before releasing held updates
 			if (VenvManager.isVenv((ServerLevel) (Object)this)) {
@@ -39,13 +42,9 @@ abstract class ServerLevelMixin {
 		}
 	}
 
-	@Inject (method = "tickTime()V", at = @At(value = "INVOKE",
-			target = "Lnet/minecraft/world/level/storage/ServerLevelData;setGameTime(J)V",
-			shift = At.Shift.AFTER))
-	private void rdbTickTime(CallbackInfo info) {
-		if (((ServerLevel) (Object) this).dimension() == Level.OVERWORLD) {
-			RedstoneDebugger.CONTROLLER.onGameTimeAdvanced();
-		}
+	@Inject(method = "tickBlock", at = @At("HEAD"))
+	private void rdbTickRan(BlockPos pos, Block block, CallbackInfo info) {
+		RedstoneDebugger.CONTROLLER.markTicksChanged((ServerLevel) (Object)this);
 	}
 
 	// Hook 2: RUN scheduled block ticks on redstone time.
@@ -75,12 +74,18 @@ abstract class ServerLevelMixin {
 	//   createTick(pos, type, delay, priority) <- scheduleTick(pos, block, delay, priority): e.g. repeaters
 	public <T> ScheduledTick<T> createTick(BlockPos pos, T type, int delay) {
 		ServerLevel self = (ServerLevel) (Object) this;
+		if (type instanceof Block) {
+			RedstoneDebugger.CONTROLLER.markTicksChanged(self);
+		}
 		// Same as vanilla, except for our "now". This constructor uses the default priority (NORMAL).
 		return new ScheduledTick<>(type, pos, rdbNow(type) + delay, self.nextSubTickCount());
 	}
 
 	public <T> ScheduledTick<T> createTick(BlockPos pos, T type, int delay, TickPriority priority) {
 		ServerLevel self = (ServerLevel) (Object) this;
+		if (type instanceof Block) {
+			RedstoneDebugger.CONTROLLER.markTicksChanged(self);
+		}
 		// Same as vanilla, except for our "now"
 		return new ScheduledTick<>(type, pos, rdbNow(type) + delay, priority, self.nextSubTickCount());
 	}
