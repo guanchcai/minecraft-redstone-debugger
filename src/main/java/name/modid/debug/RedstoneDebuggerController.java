@@ -346,7 +346,6 @@ public class RedstoneDebuggerController {
         } finally {
             restoring = false;
         }
-        return ErrorCode.UNKNOWN;
     }
 
     // ----- Functions hooked to minecraft functions -----

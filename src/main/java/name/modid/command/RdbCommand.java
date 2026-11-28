@@ -56,7 +56,8 @@ import org.jspecify.annotations.Nullable;
  * /rdb pause                 freeze redstone; players, mobs and fluids keep running
  * /rdb resume                unfreeze redstone
  * /rdb step [&lt;n&gt;]            while paused, run n redstone ticks (2n game ticks, default 1)
- * /rdb speed [&lt;tpt&gt;]         slow mode: redstone runs every tpt game ticks (default 1 = normal speed)
+ * /rdb back [&lt;n&gt;]            while paused, undo n redstone ticks (2n game ticks, default 1)
+ * /rdb speed [&lt;tpt&gt;]        slow mode: redstone runs every tpt game ticks (default 1 = normal speed)
  * /rdb checkStatus           show the debugger state
  * </pre>
  */
@@ -132,6 +133,11 @@ public final class RdbCommand {
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(1, 1000))
                                 .executes(context -> step(context, controller,
                                         IntegerArgumentType.getInteger(context, "ticks"))))) // /rdb step <n>
+                .then(Commands.literal("back")
+                        .executes(context -> back(context, controller, 1))          // /rdb back: 1 redstone tick
+                        .then(Commands.argument("ticks", IntegerArgumentType.integer(1, 1000))
+                                .executes(context -> back(context, controller,
+                                        IntegerArgumentType.getInteger(context, "ticks"))))) // /rdb back <n>
                 .then(Commands.literal("speed")
                         .executes(context -> speed(context, controller, 1))           // /rdb speed: back to normal
                         .then(Commands.argument("tpt", IntegerArgumentType.integer(1, 1000))
@@ -328,6 +334,21 @@ public final class RdbCommand {
     }
 
     /** Sets slow mode: redstone runs on 1 game tick out of every {@code tpt}. */
+    /** Undoes {@code redstoneTicks} redstone ticks; like step, the controller counts in game ticks (2 per redstone tick). */
+    private static int back(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller,
+                            int redstoneTicks) {
+        int gameTicks = redstoneTicks * 2;
+        ServerLevel venv = VenvManager.venv(context.getSource().getServer());
+        switch (controller.stepBack(venv, gameTicks)) {
+            case SUCCESS -> printMessage("Stepped back " + gameTicks + " ticks (" + redstoneTicks
+                    + (redstoneTicks == 1 ? " redstone tick)" : " redstone ticks)"), context);
+            case NOT_PAUSED -> printWarningMessage("Pause first (/rdb pause), then step back", context);
+            case NO_HISTORY -> printWarningMessage("Can't go back that far: not enough history", context);
+            default -> printErrorMessage("An unknown error has occurred", context);
+        }
+        return 1;
+    }
+
     private static int speed(CommandContext<CommandSourceStack> context, RedstoneDebuggerController controller,
                              int tpt) {
         controller.setSpeed(tpt);
